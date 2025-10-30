@@ -2,6 +2,7 @@
 import streamlit as st
 from typing import Optional
 from flow_diagram import mostrar_diagrama_flujo
+from tests_page import pagina_pruebas
 
 # Configuración de la página
 st.set_page_config(
@@ -25,6 +26,24 @@ TIPOS_DOCUMENTO = [
 ]
 
 def main():
+    # Menú lateral para navegar entre páginas
+    with st.sidebar:
+        st.title("⚖️ Navegación")
+        page = st.radio(
+            "Selecciona una página:",
+            ["🏠 Página Principal", "🧪 Pruebas"],
+            label_visibility="collapsed"
+        )
+    
+    # Renderizar la página seleccionada
+    if page == "🏠 Página Principal":
+        render_main_page()
+    elif page == "🧪 Pruebas":
+        pagina_pruebas()
+
+
+def render_main_page():
+    """Página principal del sistema"""
     st.title("⚖️ Sistema de Cumplimiento Legal")
     st.markdown("---")
     
