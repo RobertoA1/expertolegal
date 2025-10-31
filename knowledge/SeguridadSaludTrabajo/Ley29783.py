@@ -1,6 +1,7 @@
 """
 Reglas de Experta para Ley N° 29783 - Ley de Seguridad y Salud en el Trabajo
 Reglamento: D.S. 005-2012-TR y modificatorias
+(Versión corregida para compatibilidad con el sistema)
 """
 
 from experta import *
@@ -20,16 +21,15 @@ class DocumentoSST(Fact):
     tiene_epp = Field(bool, default=False)
     tiene_procedimientos_trabajo_seguro = Field(bool, default=False)
     menciona_responsabilidades = Field(bool, default=False)
-    
-    # Contexto adicional
-    numero_trabajadores = Field(int, default=0)  # Para determinar si necesita Comité o Supervisor
+    numero_trabajadores = Field(int, default=0)
 
 class ResultadoEvaluacion(Fact):
     """Almacena resultados de la evaluación"""
     cumple = Field(bool, default=True)
-    aspectos_cumplidos = Field(list, default=[])
-    aspectos_incumplidos = Field(list, default=[])
-    recomendaciones = Field(list, default=[])
+    # 🔧 CORREGIDO: Eliminar default con listas mutables
+    aspectos_cumplidos = Field(list, mandatory=False)
+    aspectos_incumplidos = Field(list, mandatory=False)
+    recomendaciones = Field(list, mandatory=False)
     explicacion = Field(str, default="")
 
 class SeguridadSaludTrabajoKB(KnowledgeEngine):
@@ -37,20 +37,18 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
     
     def __init__(self):
         super().__init__()
-        self.aspectos_evaluados = []
         self.explicaciones = []
     
-    @DefFacts()
-    def inicializar(self):
-        """Inicializar el resultado de la evaluación"""
-        yield ResultadoEvaluacion()
+    # 🔧 ELIMINADO: No usar @DefFacts, se declara desde la aplicación
+    
+    # ============= REGLAS DE INCUMPLIMIENTO CORREGIDAS =============
     
     @Rule(
         DocumentoSST(tiene_reglamento_interno=False, numero_trabajadores=MATCH.n),
         TEST(lambda n: n >= 20),
-        ResultadoEvaluacion(cumple=True)
+        AS.resultado << ResultadoEvaluacion(cumple=True)
     )
-    def falta_reglamento_interno(self):
+    def falta_reglamento_interno(self, resultado, n):
         """Verifica Reglamento Interno de SST (20+ trabajadores)"""
         self.declare(Fact(
             tipo="incumplimiento",
@@ -61,11 +59,10 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
         ))
         
         self.explicaciones.append(
-            "INCUMPLIMIENTO CRÍTICO: Los empleadores con 20 o más trabajadores deben elaborar "
-            "su Reglamento Interno de Seguridad y Salud en el Trabajo (Art. 42, Ley 29783)"
+            f"INCUMPLIMIENTO CRÍTICO: Con {n} trabajadores, debe elaborar Reglamento Interno de SST (Art. 42, Ley 29783)"
         )
         
-        self.modify(self.facts[1], cumple=False)
+        self.modify(resultado, cumple=False)
     
     @Rule(
         DocumentoSST(tiene_reglamento_interno=True),
@@ -78,16 +75,13 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Reglamento Interno de SST",
             descripcion="Se identificó Reglamento Interno de SST"
         ))
-        
-        self.explicaciones.append(
-            "CUMPLE: El documento contiene Reglamento Interno de Seguridad y Salud en el Trabajo"
-        )
+        self.explicaciones.append("CUMPLE: Documento contiene Reglamento Interno de SST")
     
     @Rule(
         DocumentoSST(tiene_politica_sst=False),
-        ResultadoEvaluacion(cumple=True)
+        AS.resultado << ResultadoEvaluacion(cumple=True)
     )
-    def falta_politica_sst(self):
+    def falta_politica_sst(self, resultado):
         """Verifica Política de SST"""
         self.declare(Fact(
             tipo="incumplimiento",
@@ -99,11 +93,10 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
         
         self.explicaciones.append(
             "INCUMPLIMIENTO CRÍTICO: El empleador debe establecer por escrito la política en materia "
-            "de seguridad y salud en el trabajo, que debe ser específica y apropiada al tamaño y naturaleza "
-            "de sus actividades (Art. 22, Ley 29783)"
+            "de seguridad y salud en el trabajo (Art. 22, Ley 29783)"
         )
         
-        self.modify(self.facts[1], cumple=False)
+        self.modify(resultado, cumple=False)
     
     @Rule(
         DocumentoSST(tiene_politica_sst=True),
@@ -116,17 +109,14 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Política de Seguridad y Salud en el Trabajo",
             descripcion="Se identificó Política de SST"
         ))
-        
-        self.explicaciones.append(
-            "CUMPLE: El documento incluye Política de Seguridad y Salud en el Trabajo"
-        )
+        self.explicaciones.append("CUMPLE: Documento incluye Política de SST")
     
     @Rule(
         DocumentoSST(tiene_comite_sst=False, numero_trabajadores=MATCH.n),
         TEST(lambda n: n >= 20),
-        ResultadoEvaluacion(cumple=True)
+        AS.resultado << ResultadoEvaluacion(cumple=True)
     )
-    def falta_comite_sst(self):
+    def falta_comite_sst(self, resultado, n):
         """Verifica Comité de SST (20+ trabajadores)"""
         self.declare(Fact(
             tipo="incumplimiento",
@@ -137,12 +127,10 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
         ))
         
         self.explicaciones.append(
-            "INCUMPLIMIENTO CRÍTICO: Los empleadores con 20 o más trabajadores deben constituir "
-            "un Comité de Seguridad y Salud en el Trabajo, de naturaleza bipartita y paritaria "
-            "(Art. 29, Ley 29783)"
+            f"INCUMPLIMIENTO CRÍTICO: Con {n} trabajadores, debe constituir Comité de SST (Art. 29, Ley 29783)"
         )
         
-        self.modify(self.facts[1], cumple=False)
+        self.modify(resultado, cumple=False)
     
     @Rule(
         DocumentoSST(tiene_comite_sst=True),
@@ -155,17 +143,14 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Comité de Seguridad y Salud en el Trabajo",
             descripcion="Se identificó Comité de SST"
         ))
-        
-        self.explicaciones.append(
-            "CUMPLE: Documento evidencia la existencia del Comité de SST"
-        )
+        self.explicaciones.append("CUMPLE: Documento evidencia Comité de SST")
     
     @Rule(
         DocumentoSST(tiene_supervisor_sst=False, numero_trabajadores=MATCH.n),
         TEST(lambda n: 0 < n < 20),
-        ResultadoEvaluacion(cumple=True)
+        AS.resultado << ResultadoEvaluacion(cumple=True)
     )
-    def falta_supervisor_sst(self):
+    def falta_supervisor_sst(self, resultado, n):
         """Verifica Supervisor de SST (menos de 20 trabajadores)"""
         self.declare(Fact(
             tipo="incumplimiento",
@@ -176,12 +161,10 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
         ))
         
         self.explicaciones.append(
-            "INCUMPLIMIENTO: Los empleadores con menos de 20 trabajadores deben capacitar y "
-            "nombrar, de entre sus trabajadores, un Supervisor de Seguridad y Salud en el Trabajo "
-            "(Art. 30, Ley 29783)"
+            f"INCUMPLIMIENTO: Con {n} trabajadores, debe designar Supervisor de SST (Art. 30, Ley 29783)"
         )
         
-        self.modify(self.facts[1], cumple=False)
+        self.modify(resultado, cumple=False)
     
     @Rule(
         DocumentoSST(tiene_supervisor_sst=True),
@@ -194,16 +177,13 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Supervisor de Seguridad y Salud en el Trabajo",
             descripcion="Se identificó Supervisor de SST"
         ))
-        
-        self.explicaciones.append(
-            "CUMPLE: Documento evidencia la designación del Supervisor de SST"
-        )
+        self.explicaciones.append("CUMPLE: Documento evidencia Supervisor de SST")
     
     @Rule(
         DocumentoSST(tiene_matriz_iper=False),
-        ResultadoEvaluacion(cumple=True)
+        AS.resultado << ResultadoEvaluacion(cumple=True)
     )
-    def falta_matriz_iper(self):
+    def falta_matriz_iper(self, resultado):
         """Verifica Matriz de Identificación de Peligros y Evaluación de Riesgos"""
         self.declare(Fact(
             tipo="incumplimiento",
@@ -214,12 +194,10 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
         ))
         
         self.explicaciones.append(
-            "INCUMPLIMIENTO CRÍTICO: El empleador debe realizar una evaluación inicial de riesgos "
-            "y actualizar la identificación de peligros y evaluación de riesgos (IPER) anualmente como mínimo "
-            "(Art. 57 y 77, Ley 29783)"
+            "INCUMPLIMIENTO CRÍTICO: Debe realizar evaluación de riesgos y Matriz IPER anualmente (Art. 57 y 77, Ley 29783)"
         )
         
-        self.modify(self.facts[1], cumple=False)
+        self.modify(resultado, cumple=False)
     
     @Rule(
         DocumentoSST(tiene_matriz_iper=True),
@@ -232,16 +210,13 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Matriz IPER (Identificación de Peligros y Evaluación de Riesgos)",
             descripcion="Se identificó Matriz IPER"
         ))
-        
-        self.explicaciones.append(
-            "CUMPLE: Documento incluye Matriz de Identificación de Peligros y Evaluación de Riesgos"
-        )
+        self.explicaciones.append("CUMPLE: Documento incluye Matriz IPER")
     
     @Rule(
         DocumentoSST(tiene_plan_anual=False),
-        ResultadoEvaluacion(cumple=True)
+        AS.resultado << ResultadoEvaluacion(cumple=True)
     )
-    def falta_plan_anual(self):
+    def falta_plan_anual(self, resultado):
         """Verifica Plan Anual de SST"""
         self.declare(Fact(
             tipo="incumplimiento",
@@ -252,12 +227,10 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
         ))
         
         self.explicaciones.append(
-            "INCUMPLIMIENTO: El empleador debe elaborar un Plan Anual de Seguridad y Salud en el Trabajo "
-            "que contenga los objetivos, metas, actividades y recursos para su implementación "
-            "(Art. 32, D.S. 005-2012-TR)"
+            "INCUMPLIMIENTO: Debe elaborar Plan Anual de SST con objetivos, metas y recursos (Art. 32, D.S. 005-2012-TR)"
         )
         
-        self.modify(self.facts[1], cumple=False)
+        self.modify(resultado, cumple=False)
     
     @Rule(
         DocumentoSST(tiene_plan_anual=True),
@@ -270,16 +243,13 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Plan Anual de Seguridad y Salud en el Trabajo",
             descripcion="Se identificó Plan Anual de SST"
         ))
-        
-        self.explicaciones.append(
-            "CUMPLE: Documento incluye Plan Anual de Seguridad y Salud en el Trabajo"
-        )
+        self.explicaciones.append("CUMPLE: Documento incluye Plan Anual de SST")
     
     @Rule(
         DocumentoSST(tiene_registros_obligatorios=False),
-        ResultadoEvaluacion(cumple=True)
+        AS.resultado << ResultadoEvaluacion(cumple=True)
     )
-    def falta_registros_obligatorios(self):
+    def falta_registros_obligatorios(self, resultado):
         """Verifica Registros Obligatorios del Sistema de Gestión"""
         self.declare(Fact(
             tipo="incumplimiento",
@@ -290,13 +260,10 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
         ))
         
         self.explicaciones.append(
-            "INCUMPLIMIENTO: El empleador debe contar con registros obligatorios del Sistema de Gestión "
-            "de SST, que incluyen: registro de accidentes, enfermedades ocupacionales, exámenes médicos, "
-            "monitoreos, inspecciones, estadísticas, equipos de emergencia, inducción y capacitación "
-            "(Art. 33, D.S. 005-2012-TR)"
+            "INCUMPLIMIENTO: Debe contar con registros obligatorios del Sistema de Gestión de SST (Art. 33, D.S. 005-2012-TR)"
         )
         
-        self.modify(self.facts[1], cumple=False)
+        self.modify(resultado, cumple=False)
     
     @Rule(
         DocumentoSST(tiene_registros_obligatorios=True),
@@ -309,16 +276,13 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Registros Obligatorios del Sistema de Gestión de SST",
             descripcion="Se identificaron registros obligatorios"
         ))
-        
-        self.explicaciones.append(
-            "CUMPLE: Documento evidencia los registros obligatorios del sistema de gestión"
-        )
+        self.explicaciones.append("CUMPLE: Documento evidencia registros obligatorios")
     
     @Rule(
         DocumentoSST(tiene_registro_accidentes=False),
-        ResultadoEvaluacion(cumple=True)
+        AS.resultado << ResultadoEvaluacion(cumple=True)
     )
-    def falta_registro_accidentes(self):
+    def falta_registro_accidentes(self, resultado):
         """Verifica Registro específico de Accidentes e Incidentes"""
         self.declare(Fact(
             tipo="incumplimiento",
@@ -329,11 +293,10 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
         ))
         
         self.explicaciones.append(
-            "INCUMPLIMIENTO: Debe llevarse un registro de accidentes de trabajo, incidentes peligrosos "
-            "y enfermedades ocupacionales (Art. 88, D.S. 005-2012-TR)"
+            "INCUMPLIMIENTO: Debe llevar registro de accidentes e incidentes (Art. 88, D.S. 005-2012-TR)"
         )
         
-        self.modify(self.facts[1], cumple=False)
+        self.modify(resultado, cumple=False)
     
     @Rule(
         DocumentoSST(tiene_registro_accidentes=True),
@@ -346,16 +309,13 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Registro de Accidentes e Incidentes de Trabajo",
             descripcion="Se identificó Registro de Accidentes e Incidentes"
         ))
-        
-        self.explicaciones.append(
-            "CUMPLE: Documento incluye Registro de Accidentes e Incidentes de Trabajo"
-        )
+        self.explicaciones.append("CUMPLE: Documento incluye Registro de Accidentes")
     
     @Rule(
         DocumentoSST(tiene_capacitaciones=False),
-        ResultadoEvaluacion(cumple=True)
+        AS.resultado << ResultadoEvaluacion(cumple=True)
     )
-    def falta_capacitaciones(self):
+    def falta_capacitaciones(self, resultado):
         """Verifica Programa de Capacitación en SST"""
         self.declare(Fact(
             tipo="incumplimiento",
@@ -366,12 +326,10 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
         ))
         
         self.explicaciones.append(
-            "INCUMPLIMIENTO: El empleador debe realizar al menos 4 capacitaciones al año en materia "
-            "de seguridad y salud en el trabajo. La capacitación debe estar centrada en el puesto de trabajo "
-            "específico (Art. 27 y 35, Ley 29783)"
+            "INCUMPLIMIENTO: Debe realizar al menos 4 capacitaciones anuales en SST (Art. 27 y 35, Ley 29783)"
         )
         
-        self.modify(self.facts[1], cumple=False)
+        self.modify(resultado, cumple=False)
     
     @Rule(
         DocumentoSST(tiene_capacitaciones=True),
@@ -384,16 +342,13 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Capacitaciones en Seguridad y Salud en el Trabajo",
             descripcion="Se identificó programa de capacitación"
         ))
-        
-        self.explicaciones.append(
-            "CUMPLE: Documento evidencia capacitaciones en Seguridad y Salud en el Trabajo"
-        )
+        self.explicaciones.append("CUMPLE: Documento evidencia capacitaciones en SST")
     
     @Rule(
         DocumentoSST(tiene_examenes_medicos=False),
-        ResultadoEvaluacion(cumple=True)
+        AS.resultado << ResultadoEvaluacion(cumple=True)
     )
-    def falta_examenes_medicos(self):
+    def falta_examenes_medicos(self, resultado):
         """Verifica Exámenes Médicos Ocupacionales"""
         self.declare(Fact(
             tipo="incumplimiento",
@@ -404,12 +359,10 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
         ))
         
         self.explicaciones.append(
-            "INCUMPLIMIENTO: El empleador debe realizar exámenes médicos antes, durante y al término "
-            "de la relación laboral a los trabajadores. Los exámenes son con cargo al empleador "
-            "(Art. 49, Ley 29783)"
+            "INCUMPLIMIENTO: Debe realizar exámenes médicos ocupacionales (Art. 49, Ley 29783)"
         )
         
-        self.modify(self.facts[1], cumple=False)
+        self.modify(resultado, cumple=False)
     
     @Rule(
         DocumentoSST(tiene_examenes_medicos=True),
@@ -422,16 +375,13 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Exámenes Médicos Ocupacionales",
             descripcion="Se identificó programa de exámenes médicos"
         ))
-        
-        self.explicaciones.append(
-            "CUMPLE: Documento evidencia la realización de exámenes médicos ocupacionales"
-        )
+        self.explicaciones.append("CUMPLE: Documento evidencia exámenes médicos")
     
     @Rule(
         DocumentoSST(tiene_epp=False),
-        ResultadoEvaluacion(cumple=True)
+        AS.resultado << ResultadoEvaluacion(cumple=True)
     )
-    def falta_epp(self):
+    def falta_epp(self, resultado):
         """Verifica Equipos de Protección Personal"""
         self.declare(Fact(
             tipo="incumplimiento",
@@ -442,12 +392,10 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
         ))
         
         self.explicaciones.append(
-            "INCUMPLIMIENTO CRÍTICO: El empleador debe proporcionar de forma gratuita a sus trabajadores "
-            "equipos de protección personal adecuados según el tipo de trabajo y riesgos específicos "
-            "(Art. 60, Ley 29783)"
+            "INCUMPLIMIENTO CRÍTICO: Debe proporcionar EPP de forma gratuita (Art. 60, Ley 29783)"
         )
         
-        self.modify(self.facts[1], cumple=False)
+        self.modify(resultado, cumple=False)
     
     @Rule(
         DocumentoSST(tiene_epp=True),
@@ -460,12 +408,9 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Equipos de Protección Personal (EPP)",
             descripcion="Se identificó provisión de EPP"
         ))
-        
-        self.explicaciones.append(
-            "CUMPLE: Documento evidencia la provisión de Equipos de Protección Personal"
-        )
+        self.explicaciones.append("CUMPLE: Documento evidencia provisión de EPP")
     
-    # Reglas complementarias
+    # ============= REGLAS COMPLEMENTARIAS =============
     
     @Rule(
         DocumentoSST(tiene_procedimientos_trabajo_seguro=True),
@@ -478,10 +423,7 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Procedimientos de Trabajo Seguro",
             descripcion="Se identificaron procedimientos escritos de trabajo seguro (PETS)"
         ))
-        
-        self.explicaciones.append(
-            "BUENA PRÁCTICA: El documento incluye Procedimientos Escritos de Trabajo Seguro (PETS)"
-        )
+        self.explicaciones.append("BUENA PRÁCTICA: Incluye Procedimientos Escritos de Trabajo Seguro")
     
     @Rule(
         DocumentoSST(menciona_responsabilidades=True),
@@ -494,113 +436,130 @@ class SeguridadSaludTrabajoKB(KnowledgeEngine):
             aspecto="Responsabilidades en SST",
             descripcion="Se identifican responsabilidades de empleador y trabajadores"
         ))
-        
-        self.explicaciones.append(
-            "BUENA PRÁCTICA: El documento especifica las responsabilidades en materia de SST"
-        )
+        self.explicaciones.append("BUENA PRÁCTICA: Especifica responsabilidades en SST")
     
-    # ------ REGLA DE SÍNTESIS --------
+    # ============= REGLA DE SÍNTESIS CORREGIDA =============
     
     @Rule(
-        ResultadoEvaluacion(cumple=MATCH.cumple),
+        AS.resultado << ResultadoEvaluacion(cumple=MATCH.cumple),
+        NOT(Fact(sintesis_generada=True)),
         salience=-100
     )
-    def generar_resultado_final(self, cumple):
-        """Generar el resumen final de evaluación"""
+    def generar_resultado_final(self, resultado, cumple):
+        """Generar el resumen final de evaluación - VERSIÓN CORREGIDA"""
         cumplimientos = []
         incumplimientos = []
         recomendaciones = []
         
-        for fact in self.facts.values():
+        # 🔧 CORRECCIÓN: Iterar de forma segura
+        for fact in list(self.facts.values()):
             if isinstance(fact, Fact):
-                if fact.get('tipo') == 'cumplimiento':
-                    cumplimientos.append(fact.get('aspecto'))
-                elif fact.get('tipo') == 'incumplimiento':
+                tipo = fact.get('tipo')
+                
+                if tipo == 'cumplimiento':
+                    cumplimientos.append(fact.get('aspecto', 'Aspecto desconocido'))
+                    
+                elif tipo == 'incumplimiento':
                     incumplimientos.append({
-                        'aspecto': fact.get('aspecto'),
-                        'descripcion': fact.get('descripcion'),
-                        'base_legal': fact.get('base_legal'),
-                        'severidad': fact.get('severidad')
+                        'aspecto': fact.get('aspecto', 'Aspecto desconocido'),
+                        'descripcion': fact.get('descripcion', 'Sin descripción'),
+                        'base_legal': fact.get('base_legal', 'No especificada'),
+                        'severidad': fact.get('severidad', 'media')
                     })
                     
                     # Generar recomendaciones
                     aspecto = fact.get('aspecto', '')
                     if 'Reglamento Interno' in aspecto:
-                        recomendaciones.append(
-                            "Elaborar e implementar el Reglamento Interno de Seguridad y Salud en el Trabajo"
-                        )
+                        recomendaciones.append("Elaborar e implementar el Reglamento Interno de SST")
                     elif 'Política' in aspecto:
-                        recomendaciones.append(
-                            "Establecer por escrito la Política de Seguridad y Salud en el Trabajo"
-                        )
+                        recomendaciones.append("Establecer por escrito la Política de SST")
                     elif 'Comité' in aspecto:
-                        recomendaciones.append(
-                            "Constituir el Comité de Seguridad y Salud en el Trabajo (paritario y bipartito)"
-                        )
+                        recomendaciones.append("Constituir el Comité de SST (paritario y bipartito)")
                     elif 'Supervisor' in aspecto:
-                        recomendaciones.append(
-                            "Designar y capacitar a un Supervisor de Seguridad y Salud en el Trabajo"
-                        )
+                        recomendaciones.append("Designar y capacitar a un Supervisor de SST")
                     elif 'IPER' in aspecto or 'Matriz' in aspecto:
-                        recomendaciones.append(
-                            "Elaborar la Matriz de Identificación de Peligros y Evaluación de Riesgos (IPER)"
-                        )
+                        recomendaciones.append("Elaborar la Matriz IPER")
                     elif 'Plan Anual' in aspecto:
-                        recomendaciones.append(
-                            "Desarrollar el Plan Anual de Seguridad y Salud en el Trabajo"
-                        )
+                        recomendaciones.append("Desarrollar el Plan Anual de SST")
                     elif 'Registros' in aspecto:
-                        recomendaciones.append(
-                            "Implementar los registros obligatorios del sistema de gestión de SST"
-                        )
+                        recomendaciones.append("Implementar registros obligatorios del sistema de gestión")
                     elif 'Accidentes' in aspecto:
-                        recomendaciones.append(
-                            "Llevar el Registro de Accidentes de Trabajo, Incidentes y Enfermedades Ocupacionales"
-                        )
+                        recomendaciones.append("Llevar Registro de Accidentes e Incidentes")
                     elif 'Capacitaciones' in aspecto:
-                        recomendaciones.append(
-                            "Implementar programa de capacitación en SST (mínimo 4 capacitaciones anuales)"
-                        )
+                        recomendaciones.append("Implementar programa de capacitación en SST (mínimo 4 anuales)")
                     elif 'Exámenes' in aspecto:
-                        recomendaciones.append(
-                            "Realizar exámenes médicos ocupacionales (pre-ocupacional, periódico y de retiro)"
-                        )
+                        recomendaciones.append("Realizar exámenes médicos ocupacionales")
                     elif 'EPP' in aspecto:
-                        recomendaciones.append(
-                            "Proporcionar Equipos de Protección Personal adecuados de forma gratuita"
-                        )
+                        recomendaciones.append("Proporcionar EPP adecuados de forma gratuita")
         
-        # Modificar el resultado final
         explicacion_final = "\n".join(self.explicaciones)
         
         self.modify(
-            self.facts[1],
+            resultado,
             cumple=cumple,
             aspectos_cumplidos=cumplimientos,
             aspectos_incumplidos=incumplimientos,
             recomendaciones=recomendaciones,
             explicacion=explicacion_final
         )
+        
+        # 🔧 EVITAR BUCLE INFINITO
+        self.declare(Fact(sintesis_generada=True))
+    
+    # ============= MÉTODOS DE UTILIDAD =============
     
     def obtener_resultados(self):
-        """Retorna el resultado de la evaluación"""
+        """Retorna el resultado de la evaluación - VERSIÓN ROBUSTA"""
+        try:
+            for fact_id, fact in list(self.facts.items()):
+                if hasattr(fact, '__class__') and fact.__class__.__name__ == 'ResultadoEvaluacion':
+                    return {
+                        'cumple': fact.get('cumple', False),
+                        'aspectos_cumplidos': list(fact.get('aspectos_cumplidos', [])),
+                        'aspectos_incumplidos': list(fact.get('aspectos_incumplidos', [])),
+                        'recomendaciones': list(fact.get('recomendaciones', [])),
+                        'explicacion': fact.get('explicacion', '')
+                    }
+            
+            # Fallback si no encuentra resultados
+            return {
+                'cumple': False,
+                'aspectos_cumplidos': self._extraer_cumplimientos(),
+                'aspectos_incumplidos': self._extraer_incumplimientos(),
+                'recomendaciones': ['Revisar documento manualmente'],
+                'explicacion': 'Evaluación básica completada'
+            }
+        
+        except Exception as e:
+            return {
+                'cumple': False,
+                'aspectos_cumplidos': [],
+                'aspectos_incumplidos': [f'Error técnico: {str(e)}'],
+                'recomendaciones': ['Contactar soporte técnico'],
+                'explicacion': f'Error en evaluación: {str(e)}'
+            }
+    
+    def _extraer_cumplimientos(self):
+        """Extrae cumplimientos de los hechos"""
+        cumplimientos = []
         for fact in self.facts.values():
-            if isinstance(fact, ResultadoEvaluacion):
-                return {
-                    'cumple': fact.get('cumple'),
-                    'aspectos_cumplidos': fact.get('aspectos_cumplidos'),
-                    'aspectos_incumplidos': fact.get('aspectos_incumplidos'),
-                    'recomendaciones': fact.get('recomendaciones'),
-                    'explicacion': fact.get('explicacion')
-                }
-        return None
+            if hasattr(fact, 'get') and fact.get('tipo') == 'cumplimiento':
+                cumplimientos.append(fact.get('aspecto', 'Aspecto desconocido'))
+        return cumplimientos
+    
+    def _extraer_incumplimientos(self):
+        """Extrae incumplimientos de los hechos"""
+        incumplimientos = []
+        for fact in self.facts.values():
+            if hasattr(fact, 'get') and fact.get('tipo') == 'incumplimiento':
+                incumplimientos.append({
+                    'aspecto': fact.get('aspecto', 'Aspecto desconocido'),
+                    'descripcion': fact.get('descripcion', 'Sin descripción'),
+                    'base_legal': fact.get('base_legal', 'No especificada'),
+                    'severidad': fact.get('severidad', 'media')
+                })
+        return incumplimientos
     
     def obtener_explicacion(self):
         """Retorna la explicación de la decisión tomada"""
         return "\n\n".join(self.explicaciones)
-    
-    def resetear(self):
-        """Limpia resultados para nueva evaluación"""
-        self.explicaciones = []
-        self.aspectos_evaluados = []
-        self.reset()

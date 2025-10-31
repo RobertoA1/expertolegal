@@ -32,147 +32,194 @@ class ResultadoEvaluacionLaboral(Fact):
     explicacion = Field(str, default="")
 
 class NormasLaboralesKB(KnowledgeEngine):
-    """Motor de inferencia para D.S. 003-97-TR (Normas Laborales)"""
+    """Motor de inferencia para D.S. 003-97-TR (Normas Laborales) - VERSIÓN CORREGIDA"""
 
     def __init__(self):
         super().__init__()
         self.explicaciones = []
-        self.recomendaciones_generadas = []
     
     @DefFacts()
-    def inicializar(self):
-        """Inicializar el resultado de la evaluacion"""
+    def _inicializar(self):
         yield ResultadoEvaluacionLaboral()
-    
-    # --- Funciones Auxiliares ---
 
-    def _registrar_incumplimiento(self, aspecto, descripcion, base_legal, severidad, recomendacion_texto):
-        """Registra un incumplimiento y modifica el estado general de cumplimiento"""
-        self.declare(Fact(
-            tipo="incumplimiento",
-            aspecto=aspecto,
-            descripcion=descripcion,
-            base_legal=base_legal,
-            severidad=severidad
-        ))
-        self.explicaciones.append(f"INCUMPLIMIENTO {severidad.upper()}: Falta {aspecto}. {descripcion} ({base_legal})")
-        
-        if recomendacion_texto not in self.recomendaciones_generadas:
-            self.recomendaciones_generadas.append(recomendacion_texto)
-
-        resultado_fact = self.facts.get(self.facts[1])
-        if resultado_fact and resultado_fact.get('cumple_laboral'):
-             self.modify(self.facts[1], cumple_laboral = False)
-
-    def _registrar_cumplimiento(self, aspecto, descripcion):
-        """Registra un cumplimiento"""
-        self.declare(Fact(
-            tipo="cumplimiento",
-            aspecto=aspecto,
-            descripcion=descripcion
-        ))
-        self.explicaciones.append(f"CUMPLE: Se identificó {aspecto}.")
-
-
-    # --- REGLAS DE EVALUACIÓN DE OBLIGACIONES CLAVE ---
+    # ============= REGLAS DE EVALUACIÓN CORREGIDAS =============
     
     # 1. Contratos Escritos y Formalidad (CRÍTICO)
     @Rule(
         DocumentoNormaLaboral(tiene_contratos_escritos_vigentes=False),
-        ResultadoEvaluacionLaboral(cumple_laboral=True)
+        AS.resultado << ResultadoEvaluacionLaboral(cumple_laboral=True)
     )
-    def falta_contratos_escritos(self):
+    def falta_contratos_escritos(self, resultado):
         """Verifica la formalización de la relación laboral (especialmente contratos modales)"""
-        self._registrar_incumplimiento(
+        self.declare(Fact(
+            tipo="incumplimiento",
             aspecto="Contratos Escritos y Vigentes",
             descripcion="No se evidencian contratos escritos (o están vencidos/mal formalizados), lo que puede presumir un contrato a plazo indeterminado.",
             base_legal="Art. 72, D.S. 003-97-TR (LPCL)",
-            severidad="crítica", 
-            recomendacion_texto="Formalizar todos los contratos de trabajo, especialmente los modales, asegurando el cumplimiento de los requisitos legales y su registro."
+            severidad="crítica"
+        ))
+        
+        self.explicaciones.append(
+            "INCUMPLIMIENTO CRÍTICO: Falta Contratos Escritos y Vigentes. "
+            "No se evidencian contratos escritos (o están vencidos/mal formalizados), lo que puede presumir un contrato a plazo indeterminado. "
+            "(Art. 72, D.S. 003-97-TR)"
         )
-
-    @Rule(DocumentoNormaLaboral(tiene_contratos_escritos_vigentes=True), ResultadoEvaluacionLaboral())
-    def cumple_contratos_escritos(self):
-        self._registrar_cumplimiento("Contratos Escritos y Vigentes", "Se verifica la existencia y vigencia de los contratos de trabajo.")
-
-    # 2. Registro en Planilla y Boletas de Pago (CRÍTICO)
-    @Rule(
-        DocumentoNormoLaboral(tiene_registro_planilla_electronica=False) |
-        DocumentoNormoLaboral(entrega_boletas_pago_oportunas=False),
-        ResultadoEvaluacionLaboral(cumple_laboral=True)
-    )
-    def falta_registro_y_boletas(self):
-        """Verifica el registro en Planilla Electrónica y la entrega de boletas"""
         
-        aspecto_desc = ""
-        recomendacion = ""
-        
-        if not self.facts.get(self.facts[0]).get('tiene_registro_planilla_electronica'):
-            aspecto_desc += "Falta de registro en la Planilla Electrónica (PLAME/T-Registro). "
-            recomendacion = "Regularizar el registro de todos los trabajadores en la Planilla Electrónica."
-        
-        if not self.facts.get(self.facts[0]).get('entrega_boletas_pago_oportunas'):
-            aspecto_desc += "No se evidencia la entrega oportuna de boletas de pago firmadas. "
-            if recomendacion:
-                recomendacion += " Y asegurar la entrega oportuna de las boletas de pago."
-            else:
-                recomendacion = "Asegurar la entrega oportuna de las boletas de pago."
-
-
-        self._registrar_incumplimiento(
-            aspecto="Formalidad Documentaria (Planilla y Boletas)",
-            descripcion=aspecto_desc,
-            base_legal="Ley 28806 / D.S. 003-97-TR",
-            severidad="crítica",
-            recomendacion_texto=recomendacion
-        )
+        self.modify(resultado, cumple_laboral=False)
 
     @Rule(
-        DocumentoNormaLaboral(tiene_registro_planilla_electronica=True, entrega_boletas_pago_oportunas=True), 
+        DocumentoNormaLaboral(tiene_contratos_escritos_vigentes=True),
         ResultadoEvaluacionLaboral()
     )
-    def cumple_registro_y_boletas(self):
-        self._registrar_cumplimiento("Formalidad Documentaria (Planilla y Boletas)", "Se verifica el registro en Planilla Electrónica y la entrega de boletas de pago.")
+    def cumple_contratos_escritos(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Contratos Escritos y Vigentes",
+            descripcion="Se verifica la existencia y vigencia de los contratos de trabajo."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Contratos Escritos y Vigentes.")
 
-    # 3. Control de Asistencia (ALTA)
+    # 2. Registro en Planilla Electrónica (CRÍTICO)
+    @Rule(
+        DocumentoNormaLaboral(tiene_registro_planilla_electronica=False),
+        AS.resultado << ResultadoEvaluacionLaboral(cumple_laboral=True)
+    )
+    def falta_registro_planilla(self, resultado):
+        """Verifica el registro en Planilla Electrónica"""
+        self.declare(Fact(
+            tipo="incumplimiento",
+            aspecto="Registro en Planilla Electrónica",
+            descripcion="Falta de registro en la Planilla Electrónica (PLAME/T-Registro).",
+            base_legal="Ley 28806 / D.S. 003-97-TR",
+            severidad="crítica"
+        ))
+        
+        self.explicaciones.append(
+            "INCUMPLIMIENTO CRÍTICO: Falta Registro en Planilla Electrónica. "
+            "Falta de registro en la Planilla Electrónica (PLAME/T-Registro). "
+            "(Ley 28806 / D.S. 003-97-TR)"
+        )
+        
+        self.modify(resultado, cumple_laboral=False)
+
+    @Rule(
+        DocumentoNormaLaboral(tiene_registro_planilla_electronica=True),
+        ResultadoEvaluacionLaboral()
+    )
+    def cumple_registro_planilla(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Registro en Planilla Electrónica",
+            descripcion="Se verifica el registro en Planilla Electrónica."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Registro en Planilla Electrónica.")
+
+    # 3. Entrega de Boletas de Pago (CRÍTICO)
+    @Rule(
+        DocumentoNormaLaboral(entrega_boletas_pago_oportunas=False),
+        AS.resultado << ResultadoEvaluacionLaboral(cumple_laboral=True)
+    )
+    def falta_boletas_pago(self, resultado):
+        """Verifica la entrega oportuna de boletas de pago"""
+        self.declare(Fact(
+            tipo="incumplimiento",
+            aspecto="Entrega de Boletas de Pago",
+            descripcion="No se evidencia la entrega oportuna de boletas de pago firmadas.",
+            base_legal="D.S. 003-97-TR",
+            severidad="crítica"
+        ))
+        
+        self.explicaciones.append(
+            "INCUMPLIMIENTO CRÍTICO: Falta Entrega de Boletas de Pago. "
+            "No se evidencia la entrega oportuna de boletas de pago firmadas. "
+            "(D.S. 003-97-TR)"
+        )
+        
+        self.modify(resultado, cumple_laboral=False)
+
+    @Rule(
+        DocumentoNormaLaboral(entrega_boletas_pago_oportunas=True),
+        ResultadoEvaluacionLaboral()
+    )
+    def cumple_boletas_pago(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Entrega de Boletas de Pago",
+            descripcion="Se verifica la entrega oportuna de boletas de pago."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Entrega de Boletas de Pago.")
+
+    # 4. Control de Asistencia (ALTA)
     @Rule(
         DocumentoNormaLaboral(registra_control_asistencia=False),
-        ResultadoEvaluacionLaboral(cumple_laboral=True)
+        AS.resultado << ResultadoEvaluacionLaboral(cumple_laboral=True)
     )
-    def falta_control_asistencia(self):
+    def falta_control_asistencia(self, resultado):
         """Verifica el registro de control de asistencia, horas extra y jornada"""
-        self._registrar_incumplimiento(
+        self.declare(Fact(
+            tipo="incumplimiento",
             aspecto="Control de Asistencia y Horas Extra",
             descripcion="No existe un sistema de control de asistencia o no se registra el sobretiempo correctamente.",
             base_legal="D.S. 004-2006-TR (Reglamento Jornada y Horario)",
-            severidad="alta",
-            recomendacion_texto="Implementar o formalizar el registro de control de asistencia y asegurar el pago/compensación de las horas extra."
+            severidad="alta"
+        ))
+        
+        self.explicaciones.append(
+            "INCUMPLIMIENTO: Falta Control de Asistencia y Horas Extra. "
+            "No existe un sistema de control de asistencia o no se registra el sobretiempo correctamente. "
+            "(D.S. 004-2006-TR)"
         )
+        
+        self.modify(resultado, cumple_laboral=False)
 
-    @Rule(DocumentoNormaLaboral(registra_control_asistencia=True), ResultadoEvaluacionLaboral())
-    def cumple_control_asistencia(self):
-        self._registrar_cumplimiento("Control de Asistencia y Horas Extra", "Se registra el control de asistencia y jornada laboral.")
-
-    # 4. Reglamento Interno de Trabajo (MODERADA/ALTA)
     @Rule(
-        DocumentoNormaLaboral(tiene_reglamento_interno_trabajo=False), # Se asume aplicable si hay >100 trabajadores
-        ResultadoEvaluacionLaboral(cumple_laboral=True)
+        DocumentoNormaLaboral(registra_control_asistencia=True),
+        ResultadoEvaluacionLaboral()
     )
-    def falta_reglamento_interno(self):
+    def cumple_control_asistencia(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Control de Asistencia y Horas Extra",
+            descripcion="Se registra el control de asistencia y jornada laboral."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Control de Asistencia y Horas Extra.")
+
+    # 5. Reglamento Interno de Trabajo (MODERADA/ALTA)
+    @Rule(
+        DocumentoNormaLaboral(tiene_reglamento_interno_trabajo=False),
+        AS.resultado << ResultadoEvaluacionLaboral(cumple_laboral=True)
+    )
+    def falta_reglamento_interno(self, resultado):
         """Verifica la existencia del Reglamento Interno de Trabajo (RIT)"""
-        self._registrar_incumplimiento(
+        self.declare(Fact(
+            tipo="incumplimiento",
             aspecto="Reglamento Interno de Trabajo (RIT)",
             descripcion="Falta el Reglamento Interno de Trabajo, obligatorio si la empresa cuenta con 100 o más trabajadores.",
             base_legal="Art. 17, D.S. 039-91-TR (Reglamento RIT)",
-            severidad="moderada", # Sube a 'alta' si el número de trabajadores es > 100
-            recomendacion_texto="Elaborar e implementar el Reglamento Interno de Trabajo si cuenta con 100 o más trabajadores, y depositarlo ante la Autoridad Administrativa de Trabajo."
-        )
-
-    @Rule(DocumentoNormaLaboral(tiene_reglamento_interno_trabajo=True), ResultadoEvaluacionLaboral())
-    def cumple_reglamento_interno(self):
-        self._registrar_cumplimiento("Reglamento Interno de Trabajo (RIT)", "Se cuenta con Reglamento Interno de Trabajo.")
+            severidad="moderada"
+        ))
         
-    # 5. Periodo de Prueba (ADICIONAL)
+        self.explicaciones.append(
+            "INCUMPLIMIENTO: Falta Reglamento Interno de Trabajo (RIT). "
+            "Falta el Reglamento Interno de Trabajo, obligatorio si la empresa cuenta con 100 o más trabajadores. "
+            "(Art. 17, D.S. 039-91-TR)"
+        )
+        
+        self.modify(resultado, cumple_laboral=False)
+
+    @Rule(
+        DocumentoNormaLaboral(tiene_reglamento_interno_trabajo=True),
+        ResultadoEvaluacionLaboral()
+    )
+    def cumple_reglamento_interno(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Reglamento Interno de Trabajo (RIT)",
+            descripcion="Se cuenta con Reglamento Interno de Trabajo."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Reglamento Interno de Trabajo (RIT).")
+        
+    # 6. Periodo de Prueba (ADICIONAL)
     @Rule(
         DocumentoNormaLaboral(tiene_periodo_prueba_informado=True),
         ResultadoEvaluacionLaboral()
@@ -186,54 +233,116 @@ class NormasLaboralesKB(KnowledgeEngine):
         ))
         self.explicaciones.append("BUENA PRÁCTICA: Se informa correctamente sobre el periodo de prueba.")
 
-
-    # ------ REGLA DE SINTESIS --------
-
+    # ============= REGLA DE SÍNTESIS CORREGIDA =============
+    
     @Rule(
-        ResultadoEvaluacionLaboral(cumple_laboral = MATCH.cumple),
-        salience = -100
+        AS.resultado << ResultadoEvaluacionLaboral(cumple_laboral=MATCH.cumple),
+        NOT(Fact(sintesis_generada=True)),
+        salience=-1000
     )
-    def generar_resultado_final(self, cumple):
-        """Generar el resumen final de evaluacion para D.S. 003-97-TR"""
+    def generar_resultado_final(self, resultado, cumple):
+        """Generar el resumen final de evaluacion para D.S. 003-97-TR - VERSIÓN CORREGIDA"""
         cumplimientos = []
         incumplimientos = []
+        recomendaciones = []
         
-        for fact in self.facts.values():
+        # Procesar todos los hechos
+        for fact in list(self.facts.values()):
             if isinstance(fact, Fact):
-                if fact.get('tipo') in ['cumplimiento', 'cumplimiento_adicional']:
-                    cumplimientos.append(fact.get('aspecto'))
-                elif fact.get('tipo') == 'incumplimiento':
+                tipo = fact.get('tipo')
+                
+                if tipo in ['cumplimiento', 'cumplimiento_adicional']:
+                    cumplimientos.append(fact.get('aspecto', 'Aspecto desconocido'))
+                    
+                elif tipo == 'incumplimiento':
                     incumplimientos.append({
-                        'aspecto': fact.get('aspecto'),
-                        'descripcion': fact.get('descripcion'),
-                        'base_legal': fact.get('base_legal'),
-                        'severidad': fact.get('severidad')
+                        'aspecto': fact.get('aspecto', 'Aspecto desconocido'),
+                        'descripcion': fact.get('descripcion', 'Sin descripción'),
+                        'base_legal': fact.get('base_legal', 'No especificada'),
+                        'severidad': fact.get('severidad', 'media')
                     })
-                        
-        # Modificar el resultado final
+        
+        # Generar recomendaciones basadas en incumplimientos
+        for incumplimiento in incumplimientos:
+            aspecto = incumplimiento.get('aspecto', '')
+            if 'Contratos' in aspecto:
+                recomendaciones.append("Formalizar todos los contratos de trabajo, especialmente los modales, asegurando el cumplimiento de los requisitos legales y su registro.")
+            elif 'Planilla' in aspecto:
+                recomendaciones.append("Regularizar el registro de todos los trabajadores en la Planilla Electrónica (PLAME/T-Registro).")
+            elif 'Boletas' in aspecto:
+                recomendaciones.append("Asegurar la entrega oportuna de las boletas de pago firmadas a todos los trabajadores.")
+            elif 'Control de Asistencia' in aspecto:
+                recomendaciones.append("Implementar o formalizar el registro de control de asistencia y asegurar el pago/compensación de las horas extra.")
+            elif 'Reglamento Interno' in aspecto:
+                recomendaciones.append("Elaborar e implementar el Reglamento Interno de Trabajo si cuenta con 100 o más trabajadores, y depositarlo ante la Autoridad Administrativa de Trabajo.")
+        
         explicacion_final = "\n".join(self.explicaciones)
 
         self.modify(
-            self.facts[1],
-            cumple_laboral = cumple,
-            aspectos_cumplidos = cumplimientos,
-            aspectos_incumplidos = incumplimientos,
-            recomendaciones = self.recomendaciones_generadas,
-            explicacion = explicacion_final
+            resultado,
+            cumple_laboral=cumple,
+            aspectos_cumplidos=cumplimientos,
+            aspectos_incumplidos=incumplimientos,
+            recomendaciones=recomendaciones,
+            explicacion=explicacion_final
         )
+        
+        # 🔧 EVITAR BUCLE INFINITO
+        self.declare(Fact(sintesis_generada=True))
 
+    # ============= MÉTODOS DE UTILIDAD =============
+    
     def obtener_resultados(self):
         """Retorna el resultado de la evaluación"""
+        try:
+            for fact_id, fact in list(self.facts.items()):
+                if hasattr(fact, '__class__') and fact.__class__.__name__ == 'ResultadoEvaluacionLaboral':
+                    return {
+                        'cumple_laboral': fact.get('cumple_laboral', False),
+                        'aspectos_cumplidos': list(fact.get('aspectos_cumplidos', [])),
+                        'aspectos_incumplidos': list(fact.get('aspectos_incumplidos', [])),
+                        'recomendaciones': list(fact.get('recomendaciones', [])),
+                        'explicacion': fact.get('explicacion', '')
+                    }
+            
+            # Fallback si no encuentra resultados
+            return {
+                'cumple_laboral': False,
+                'aspectos_cumplidos': self._extraer_cumplimientos(),
+                'aspectos_incumplidos': self._extraer_incumplimientos(),
+                'recomendaciones': ['Revisar documento manualmente'],
+                'explicacion': 'Evaluación básica completada'
+            }
+        
+        except Exception as e:
+            return {
+                'cumple_laboral': False,
+                'aspectos_cumplidos': [],
+                'aspectos_incumplidos': [f'Error técnico: {str(e)}'],
+                'recomendaciones': ['Contactar soporte técnico'],
+                'explicacion': f'Error en evaluación: {str(e)}'
+            }
+    
+    def _extraer_cumplimientos(self):
+        """Extrae cumplimientos de los hechos"""
+        cumplimientos = []
         for fact in self.facts.values():
-            if isinstance(fact, ResultadoEvaluacionLaboral):
-                return {
-                    'cumple_laboral': fact.get('cumple_laboral'),
-                    'aspectos_cumplidos': fact.get('aspectos_cumplidos'),
-                    'aspectos_incumplidos': fact.get('aspectos_incumplidos'),
-                    'recomendaciones': fact.get('recomendaciones'),
-                    'explicacion': fact.get('explicacion')
-                }
-        return None
+            if hasattr(fact, 'get') and fact.get('tipo') in ['cumplimiento', 'cumplimiento_adicional']:
+                cumplimientos.append(fact.get('aspecto', 'Aspecto desconocido'))
+        return cumplimientos
+    
+    def _extraer_incumplimientos(self):
+        """Extrae incumplimientos de los hechos"""
+        incumplimientos = []
+        for fact in self.facts.values():
+            if hasattr(fact, 'get') and fact.get('tipo') == 'incumplimiento':
+                incumplimientos.append({
+                    'aspecto': fact.get('aspecto', 'Aspecto desconocido'),
+                    'descripcion': fact.get('descripcion', 'Sin descripción'),
+                    'base_legal': fact.get('base_legal', 'No especificada'),
+                    'severidad': fact.get('severidad', 'media')
+                })
+        return incumplimientos
     
     def obtener_explicacion(self):
         """Retorna la explicación de la decisión tomada"""

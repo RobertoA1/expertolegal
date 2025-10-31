@@ -9,200 +9,446 @@ class AspectoAmbiental(Fact):
     # Hechos sobre la situacion ambiental de la empresa
     
     # 1. Evaluación de Impacto Ambiental (Ley 27446 / Ley 28611)
-    # IEGA: Instrumento de Gestión Ambiental (DIA, EIA-sd, EIA-d)
-    tiene_IEGA_aprobado = Field(bool, default=False) 
+    tiene_estudio_impacto_ambiental = Field(bool, default=False) 
     
     # 2. Fiscalización y Monitoreo
-    # Plan de monitoreo e informes periódicos a OEFA/autoridad sectorial
-    monitoreo_ambiental_activo = Field(bool, default=False) 
+    tiene_monitoreo_ambiental = Field(bool, default=False) 
     
     # 3. Cumplimiento de Estándares
-    # Límites Máximos Permisibles y Estándares de Calidad Ambiental
     cumple_LMP_ECA = Field(bool, default=False) 
     
-    # 4. Licencias Específicas (ejemplos)
-    # Registro de generador o manejo de residuos no municipales
+    # 4. Gestión de Residuos
     tiene_registro_residuos_solidos = Field(bool, default=False) 
-    # Autorización de vertimientos de agua (ANA) u otra licencia sectorial
-    tiene_autorizacion_vertimientos = Field(bool, default=False) 
+    
+    # 5. Autorizaciones Específicas
+    tiene_autorizacion_vertimientos = Field(bool, default=False)
+    
+    # 6. Planes de Gestión
+    tiene_plan_manejo_ambiental = Field(bool, default=False)
+    
+    # 7. Sistema de Gestión
+    tiene_sistema_gestion_ambiental = Field(bool, default=False)
+    
+    # 8. Plan de Contingencias
+    tiene_plan_contigencia = Field(bool, default=False)
 
 class ResultadoEvaluacionAmbiental(Fact):
     # Almacena Resultados de la evaluación de Normativa Ambiental
-    cumple_ambiental = Field(bool, default=True) 
+    cumple_ambiental = Field(bool, default=True)
     aspectos_cumplidos = Field(list, default=[])
     aspectos_incumplidos = Field(list, default=[])
     recomendaciones = Field(list, default=[])
     explicacion = Field(str, default="")
 
 class NormativaAmbientalKB(KnowledgeEngine):
-    """Motor de inferencia para Ley 28611 - Ley General del Ambiente"""
+    """Motor de inferencia para Ley 28611 - Ley General del Ambiente - VERSIÓN CORREGIDA"""
 
     def __init__(self):
         super().__init__()
         self.explicaciones = []
-        self.recomendaciones_generadas = []
     
     @DefFacts()
-    def inicializar(self):
-        """Inicializar el resultado de la evaluacion"""
+    def _inicializar(self):
         yield ResultadoEvaluacionAmbiental()
-    
-    # --- Funciones Auxiliares ---
 
-    def _registrar_incumplimiento(self, aspecto, descripcion, base_legal, severidad, recomendacion_texto):
-        """Registra un incumplimiento y modifica el estado general de cumplimiento"""
+    # ============= REGLAS DE EVALUACIÓN CORREGIDAS =============
+    
+    # 1. Estudio de Impacto Ambiental (CRÍTICO)
+    @Rule(
+        AspectoAmbiental(tiene_estudio_impacto_ambiental=False),
+        AS.resultado << ResultadoEvaluacionAmbiental(cumple_ambiental=True)
+    )
+    def falta_estudio_impacto(self, resultado):
+        """Verifica la existencia del Estudio de Impacto Ambiental"""
         self.declare(Fact(
             tipo="incumplimiento",
-            aspecto=aspecto,
-            descripcion=descripcion,
-            base_legal=base_legal,
-            severidad=severidad
+            aspecto="Estudio de Impacto Ambiental",
+            descripcion="El proyecto no cuenta con EIA aprobado por la autoridad competente.",
+            base_legal="Art. 28, Ley 28611 / Ley 27446 (SEIA)",
+            severidad="crítica"
         ))
-        self.explicaciones.append(f"INCUMPLIMIENTO {severidad.upper()}: Falta {aspecto}. {descripcion} ({base_legal})")
         
-        if recomendacion_texto not in self.recomendaciones_generadas:
-            self.recomendaciones_generadas.append(recomendacion_texto)
+        self.explicaciones.append(
+            "INCUMPLIMIENTO CRÍTICO: Falta Estudio de Impacto Ambiental. "
+            "El proyecto no cuenta con EIA aprobado por la autoridad competente. "
+            "(Art. 28, Ley 28611)"
+        )
+        
+        self.modify(resultado, cumple_ambiental=False)
 
-        resultado_fact = self.facts.get(self.facts[1])
-        if resultado_fact and resultado_fact.get('cumple_ambiental'):
-             self.modify(self.facts[1], cumple_ambiental = False)
-
-    def _registrar_cumplimiento(self, aspecto, descripcion):
-        """Registra un cumplimiento"""
+    @Rule(
+        AspectoAmbiental(tiene_estudio_impacto_ambiental=True),
+        ResultadoEvaluacionAmbiental()
+    )
+    def cumple_estudio_impacto(self):
         self.declare(Fact(
             tipo="cumplimiento",
-            aspecto=aspecto,
-            descripcion=descripcion
+            aspecto="Estudio de Impacto Ambiental",
+            descripcion="El proyecto cuenta con EIA aprobado y vigente."
         ))
-        self.explicaciones.append(f"CUMPLE: Se identificó {aspecto}.")
+        self.explicaciones.append("CUMPLE: Se identificó Estudio de Impacto Ambiental.")
 
-
-    # --- REGLAS DE EVALUACIÓN DE OBLIGACIONES CLAVE ---
-    
-    # 1. Instrumento de Gestión Ambiental (IEGA) (CRÍTICO)
+    # 2. Monitoreo Ambiental (ALTA)
     @Rule(
-        AspectoAmbiental(tiene_IEGA_aprobado=False),
-        ResultadoEvaluacionAmbiental(cumple_ambiental=True)
+        AspectoAmbiental(tiene_monitoreo_ambiental=False),
+        AS.resultado << ResultadoEvaluacionAmbiental(cumple_ambiental=True)
     )
-    def falta_IEGA(self):
-        """Verifica la existencia del Instrumento de Gestión Ambiental (DIA, EIA, etc.)"""
-        self._registrar_incumplimiento(
-            aspecto="Instrumento de Gestión Ambiental (IEGA)",
-            descripcion="Todo proyecto o actividad con potencial impacto ambiental debe contar con un IEGA (DIA, EIA-sd, EIA-d) aprobado por la autoridad sectorial competente (SENACE/Sector).",
-            base_legal="Art. 28, Ley 28611 / Ley 27446 (SEIA)",
-            severidad="crítica", 
-            recomendacion_texto="Determinar la categoría del proyecto (SEIA) y tramitar la aprobación del Instrumento de Gestión Ambiental correspondiente (DIA o EIA)."
+    def falta_monitoreo_ambiental(self, resultado):
+        """Verifica la ejecución del monitoreo ambiental"""
+        self.declare(Fact(
+            tipo="incumplimiento",
+            aspecto="Monitoreo Ambiental",
+            descripcion="No se ejecuta el plan de monitoreo ambiental requerido.",
+            base_legal="D.S. 004-2017-MINAM (Reglamento OEFA)",
+            severidad="alta"
+        ))
+        
+        self.explicaciones.append(
+            "INCUMPLIMIENTO: Falta Monitoreo Ambiental. "
+            "No se ejecuta el plan de monitoreo ambiental requerido. "
+            "(D.S. 004-2017-MINAM)"
         )
+        
+        self.modify(resultado, cumple_ambiental=False)
 
-    @Rule(AspectoAmbiental(tiene_IEGA_aprobado=True), ResultadoEvaluacionAmbiental())
-    def cumple_IEGA(self):
-        self._registrar_cumplimiento("Instrumento de Gestión Ambiental (IEGA)", "El proyecto cuenta con IEGA (DIA/EIA) aprobado y vigente.")
+    @Rule(
+        AspectoAmbiental(tiene_monitoreo_ambiental=True),
+        ResultadoEvaluacionAmbiental()
+    )
+    def cumple_monitoreo_ambiental(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Monitoreo Ambiental",
+            descripcion="Se ejecuta el programa de monitoreo ambiental."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Monitoreo Ambiental.")
 
-    # 2. Cumplimiento de LMP y ECA (CRÍTICO)
+    # 3. Cumplimiento de LMP y ECA (CRÍTICO)
     @Rule(
         AspectoAmbiental(cumple_LMP_ECA=False),
-        ResultadoEvaluacionAmbiental(cumple_ambiental=True)
+        AS.resultado << ResultadoEvaluacionAmbiental(cumple_ambiental=True)
     )
-    def incumplimiento_LMP_ECA(self):
-        """Verifica el cumplimiento de los Límites Máximos Permisibles (LMP) y Estándares de Calidad Ambiental (ECA)"""
-        self._registrar_incumplimiento(
-            aspecto="Límites Máximos Permisibles (LMP) y ECA",
-            descripcion="Se han detectado valores de vertimiento/emisión (LMP) o de calidad del entorno (ECA) que superan los límites establecidos, resultando en contaminación o riesgo ambiental.",
+    def incumplimiento_limites(self, resultado):
+        """Verifica el cumplimiento de LMP y ECA"""
+        self.declare(Fact(
+            tipo="incumplimiento",
+            aspecto="Cumplimiento de LMP y ECA",
+            descripcion="Se superan los límites máximos permisibles o estándares de calidad ambiental.",
             base_legal="Art. 34, Ley 28611",
-            severidad="crítica",
-            recomendacion_texto="Implementar medidas correctivas y tecnológicas (PAMA) para garantizar que las emisiones y efluentes cumplan con los LMP sectoriales vigentes y que no se afecte la calidad ambiental (ECA)."
+            severidad="crítica"
+        ))
+        
+        self.explicaciones.append(
+            "INCUMPLIMIENTO CRÍTICO: Falta Cumplimiento de LMP y ECA. "
+            "Se superan los límites máximos permisibles o estándares de calidad ambiental. "
+            "(Art. 34, Ley 28611)"
         )
+        
+        self.modify(resultado, cumple_ambiental=False)
 
-    @Rule(AspectoAmbiental(cumple_LMP_ECA=True), ResultadoEvaluacionAmbiental())
-    def cumple_LMP_ECA(self):
-        self._registrar_cumplimiento("LMP y ECA", "Se cumplen los Límites Máximos Permisibles y los Estándares de Calidad Ambiental en los monitoreos.")
-
-    # 3. Monitoreo Ambiental y Reporte (ALTA)
     @Rule(
-        AspectoAmbiental(monitoreo_ambiental_activo=False),
-        ResultadoEvaluacionAmbiental(cumple_ambiental=True)
+        AspectoAmbiental(cumple_LMP_ECA=True),
+        ResultadoEvaluacionAmbiental()
     )
-    def falta_monitoreo(self):
-        """Verifica la ejecución y reporte del monitoreo ambiental"""
-        self._registrar_incumplimiento(
-            aspecto="Monitoreo y Reporte Ambiental",
-            descripcion="El plan de monitoreo ambiental, detallado en el IEGA, no se está ejecutando o los informes no se presentan periódicamente a la autoridad fiscalizadora (OEFA/Sector).",
-            base_legal="D.S. 004-2017-MINAM (Reglamento OEFA)",
-            severidad="alta",
-            recomendacion_texto="Establecer un Plan de Monitoreo Ambiental continuo y presentar los Informes de Monitoreo Ambiental (IMA) según la periodicidad exigida por la autoridad competente."
-        )
+    def cumple_limites(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Cumplimiento de LMP y ECA",
+            descripcion="Se cumplen los límites máximos permisibles y estándares de calidad ambiental."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Cumplimiento de LMP y ECA.")
 
-    @Rule(AspectoAmbiental(monitoreo_ambiental_activo=True), ResultadoEvaluacionAmbiental())
-    def cumple_monitoreo(self):
-        self._registrar_cumplimiento("Monitoreo Ambiental Activo", "El programa de monitoreo se ejecuta y se reporta a la autoridad competente.")
-
-    # 4. Gestión de Residuos Sólidos (MEDIA/ALTA)
+    # 4. Registro de Residuos Sólidos (ALTA)
     @Rule(
         AspectoAmbiental(tiene_registro_residuos_solidos=False),
-        ResultadoEvaluacionAmbiental(cumple_ambiental=True)
+        AS.resultado << ResultadoEvaluacionAmbiental(cumple_ambiental=True)
     )
-    def falta_registro_residuos(self):
-        """Verifica el registro de generador o el Plan de Manejo de Residuos Sólidos"""
-        self._registrar_incumplimiento(
-            aspecto="Registro y Plan de Residuos Sólidos",
-            descripcion="No se cuenta con el Plan de Manejo de Residuos Sólidos ni con el registro de generador (declaración anual de residuos).",
+    def falta_registro_residuos(self, resultado):
+        """Verifica el registro de generador de residuos"""
+        self.declare(Fact(
+            tipo="incumplimiento",
+            aspecto="Registro de Residuos Sólidos",
+            descripcion="No se cuenta con registro de generador de residuos sólidos.",
             base_legal="D.L. 1278 (Ley de Gestión Integral de Residuos Sólidos)",
-            severidad="media",
-            recomendacion_texto="Implementar un Plan de Manejo de Residuos Sólidos (municipales y no municipales) y realizar la Declaración Anual de Residuos no Municipales (D.A.R.)."
+            severidad="alta"
+        ))
+        
+        self.explicaciones.append(
+            "INCUMPLIMIENTO: Falta Registro de Residuos Sólidos. "
+            "No se cuenta con registro de generador de residuos sólidos. "
+            "(D.L. 1278)"
         )
-
-    @Rule(AspectoAmbiental(tiene_registro_residuos_solidos=True), ResultadoEvaluacionAmbiental())
-    def cumple_registro_residuos(self):
-        self._registrar_cumplimiento("Registro de Residuos Sólidos", "Se lleva un Plan de Manejo de Residuos Sólidos y se ha cumplido con la Declaración Anual.")
-
-    # ------ REGLA DE SINTESIS --------
+        
+        self.modify(resultado, cumple_ambiental=False)
 
     @Rule(
-        ResultadoEvaluacionAmbiental(cumple_ambiental = MATCH.cumple),
-        salience = -100
+        AspectoAmbiental(tiene_registro_residuos_solidos=True),
+        ResultadoEvaluacionAmbiental()
     )
-    def generar_resultado_final(self, cumple):
-        """Generar el resumen final de evaluacion para Ley 28611"""
+    def cumple_registro_residuos(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Registro de Residuos Sólidos",
+            descripcion="Se cuenta con registro de generador de residuos sólidos."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Registro de Residuos Sólidos.")
+
+    # 5. Autorización de Vertimientos (ALTA)
+    @Rule(
+        AspectoAmbiental(tiene_autorizacion_vertimientos=False),
+        AS.resultado << ResultadoEvaluacionAmbiental(cumple_ambiental=True)
+    )
+    def falta_autorizacion_vertimientos(self, resultado):
+        """Verifica la autorización de vertimientos"""
+        self.declare(Fact(
+            tipo="incumplimiento",
+            aspecto="Autorización de Vertimientos",
+            descripcion="No se cuenta con autorización para vertimientos de aguas residuales.",
+            base_legal="Ley 29338 - Ley de Recursos Hídricos",
+            severidad="alta"
+        ))
+        
+        self.explicaciones.append(
+            "INCUMPLIMIENTO: Falta Autorización de Vertimientos. "
+            "No se cuenta con autorización para vertimientos de aguas residuales. "
+            "(Ley 29338)"
+        )
+        
+        self.modify(resultado, cumple_ambiental=False)
+
+    @Rule(
+        AspectoAmbiental(tiene_autorizacion_vertimientos=True),
+        ResultadoEvaluacionAmbiental()
+    )
+    def cumple_autorizacion_vertimientos(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Autorización de Vertimientos",
+            descripcion="Se cuenta con autorización para vertimientos."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Autorización de Vertimientos.")
+
+    # 6. Plan de Manejo Ambiental (MODERADA)
+    @Rule(
+        AspectoAmbiental(tiene_plan_manejo_ambiental=False),
+        AS.resultado << ResultadoEvaluacionAmbiental(cumple_ambiental=True)
+    )
+    def falta_plan_manejo(self, resultado):
+        """Verifica la existencia del plan de manejo ambiental"""
+        self.declare(Fact(
+            tipo="incumplimiento",
+            aspecto="Plan de Manejo Ambiental",
+            descripcion="No se cuenta con plan de manejo ambiental implementado.",
+            base_legal="D.S. 019-2009-MINAM",
+            severidad="moderada"
+        ))
+        
+        self.explicaciones.append(
+            "INCUMPLIMIENTO: Falta Plan de Manejo Ambiental. "
+            "No se cuenta con plan de manejo ambiental implementado. "
+            "(D.S. 019-2009-MINAM)"
+        )
+        
+        self.modify(resultado, cumple_ambiental=False)
+
+    @Rule(
+        AspectoAmbiental(tiene_plan_manejo_ambiental=True),
+        ResultadoEvaluacionAmbiental()
+    )
+    def cumple_plan_manejo(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Plan de Manejo Ambiental",
+            descripcion="Se cuenta con plan de manejo ambiental implementado."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Plan de Manejo Ambiental.")
+
+    # 7. Sistema de Gestión Ambiental (MODERADA)
+    @Rule(
+        AspectoAmbiental(tiene_sistema_gestion_ambiental=False),
+        AS.resultado << ResultadoEvaluacionAmbiental(cumple_ambiental=True)
+    )
+    def falta_sistema_gestion(self, resultado):
+        """Verifica la existencia de sistema de gestión ambiental"""
+        self.declare(Fact(
+            tipo="incumplimiento",
+            aspecto="Sistema de Gestión Ambiental",
+            descripcion="No se cuenta con sistema de gestión ambiental implementado.",
+            base_legal="ISO 14001 / Políticas internas",
+            severidad="moderada"
+        ))
+        
+        self.explicaciones.append(
+            "INCUMPLIMIENTO: Falta Sistema de Gestión Ambiental. "
+            "No se cuenta con sistema de gestión ambiental implementado. "
+            "(ISO 14001)"
+        )
+        
+        self.modify(resultado, cumple_ambiental=False)
+
+    @Rule(
+        AspectoAmbiental(tiene_sistema_gestion_ambiental=True),
+        ResultadoEvaluacionAmbiental()
+    )
+    def cumple_sistema_gestion(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Sistema de Gestión Ambiental",
+            descripcion="Se cuenta con sistema de gestión ambiental implementado."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Sistema de Gestión Ambiental.")
+
+    # 8. Plan de Contingencias (MODERADA)
+    @Rule(
+        AspectoAmbiental(tiene_plan_contigencia=False),
+        AS.resultado << ResultadoEvaluacionAmbiental(cumple_ambiental=True)
+    )
+    def falta_plan_contingencia(self, resultado):
+        """Verifica la existencia del plan de contingencias"""
+        self.declare(Fact(
+            tipo="incumplimiento",
+            aspecto="Plan de Contingencias",
+            descripcion="No se cuenta con plan de contingencias ambientales.",
+            base_legal="D.S. 081-2007-PCM",
+            severidad="moderada"
+        ))
+        
+        self.explicaciones.append(
+            "INCUMPLIMIENTO: Falta Plan de Contingencias. "
+            "No se cuenta con plan de contingencias ambientales. "
+            "(D.S. 081-2007-PCM)"
+        )
+        
+        self.modify(resultado, cumple_ambiental=False)
+
+    @Rule(
+        AspectoAmbiental(tiene_plan_contigencia=True),
+        ResultadoEvaluacionAmbiental()
+    )
+    def cumple_plan_contingencia(self):
+        self.declare(Fact(
+            tipo="cumplimiento",
+            aspecto="Plan de Contingencias",
+            descripcion="Se cuenta con plan de contingencias ambientales."
+        ))
+        self.explicaciones.append("CUMPLE: Se identificó Plan de Contingencias.")
+
+    # ============= REGLA DE SÍNTESIS CORREGIDA =============
+    
+    @Rule(
+        AS.resultado << ResultadoEvaluacionAmbiental(cumple_ambiental=MATCH.cumple),
+        NOT(Fact(sintesis_generada=True)),
+        salience=-1000
+    )
+    def generar_resultado_final(self, resultado, cumple):
+        """Generar el resumen final de evaluacion para Ley 28611 - VERSIÓN CORREGIDA"""
         cumplimientos = []
         incumplimientos = []
+        recomendaciones = []
         
-        for fact in self.facts.values():
+        # Procesar todos los hechos
+        for fact in list(self.facts.values()):
             if isinstance(fact, Fact):
-                if fact.get('tipo') in ['cumplimiento']:
-                    cumplimientos.append(fact.get('aspecto'))
-                elif fact.get('tipo') == 'incumplimiento':
+                tipo = fact.get('tipo')
+                
+                if tipo in ['cumplimiento', 'cumplimiento_adicional']:
+                    cumplimientos.append(fact.get('aspecto', 'Aspecto desconocido'))
+                    
+                elif tipo == 'incumplimiento':
                     incumplimientos.append({
-                        'aspecto': fact.get('aspecto'),
-                        'descripcion': fact.get('descripcion'),
-                        'base_legal': fact.get('base_legal'),
-                        'severidad': fact.get('severidad')
+                        'aspecto': fact.get('aspecto', 'Aspecto desconocido'),
+                        'descripcion': fact.get('descripcion', 'Sin descripción'),
+                        'base_legal': fact.get('base_legal', 'No especificada'),
+                        'severidad': fact.get('severidad', 'media')
                     })
-                        
-        # Modificar el resultado final
+        
+        # Generar recomendaciones basadas en incumplimientos
+        for incumplimiento in incumplimientos:
+            aspecto = incumplimiento.get('aspecto', '')
+            if 'Estudio de Impacto' in aspecto:
+                recomendaciones.append("Tramitar la aprobación del Estudio de Impacto Ambiental correspondiente ante la autoridad competente.")
+            elif 'Monitoreo Ambiental' in aspecto:
+                recomendaciones.append("Implementar programa de monitoreo ambiental continuo y presentar informes periódicos.")
+            elif 'LMP y ECA' in aspecto:
+                recomendaciones.append("Implementar medidas correctivas para cumplir con los límites máximos permisibles y estándares de calidad ambiental.")
+            elif 'Residuos Sólidos' in aspecto:
+                recomendaciones.append("Implementar Plan de Manejo de Residuos Sólidos y realizar declaración anual.")
+            elif 'Vertimientos' in aspecto:
+                recomendaciones.append("Obtener autorización de vertimientos de la Autoridad Nacional del Agua.")
+            elif 'Plan de Manejo' in aspecto:
+                recomendaciones.append("Elaborar e implementar plan de manejo ambiental específico.")
+            elif 'Sistema de Gestión' in aspecto:
+                recomendaciones.append("Implementar sistema de gestión ambiental (ISO 14001 u otro).")
+            elif 'Contingencias' in aspecto:
+                recomendaciones.append("Elaborar e implementar plan de contingencias ambientales.")
+        
         explicacion_final = "\n".join(self.explicaciones)
 
         self.modify(
-            self.facts[1],
-            cumple_ambiental = cumple,
-            aspectos_cumplidos = cumplimientos,
-            # Se usa una lista de strings para 'aspectos_incumplidos' por simplicidad en el output del engine
-            aspectos_incumplidos = [i['aspecto'] for i in incumplimientos],
-            recomendaciones = self.recomendaciones_generadas,
-            explicacion = explicacion_final
+            resultado,
+            cumple_ambiental=cumple,
+            aspectos_cumplidos=cumplimientos,
+            aspectos_incumplidos=incumplimientos,
+            recomendaciones=recomendaciones,
+            explicacion=explicacion_final
         )
+        
+        # 🔧 EVITAR BUCLE INFINITO
+        self.declare(Fact(sintesis_generada=True))
 
+    # ============= MÉTODOS DE UTILIDAD =============
+    
     def obtener_resultados(self):
         """Retorna el resultado de la evaluación"""
+        try:
+            for fact_id, fact in list(self.facts.items()):
+                if hasattr(fact, '__class__') and fact.__class__.__name__ == 'ResultadoEvaluacionAmbiental':
+                    return {
+                        'cumple_ambiental': fact.get('cumple_ambiental', False),
+                        'aspectos_cumplidos': list(fact.get('aspectos_cumplidos', [])),
+                        'aspectos_incumplidos': list(fact.get('aspectos_incumplidos', [])),
+                        'recomendaciones': list(fact.get('recomendaciones', [])),
+                        'explicacion': fact.get('explicacion', '')
+                    }
+            
+            # Fallback si no encuentra resultados
+            return {
+                'cumple_ambiental': False,
+                'aspectos_cumplidos': self._extraer_cumplimientos(),
+                'aspectos_incumplidos': self._extraer_incumplimientos(),
+                'recomendaciones': ['Revisar documento manualmente'],
+                'explicacion': 'Evaluación básica completada'
+            }
+        
+        except Exception as e:
+            return {
+                'cumple_ambiental': False,
+                'aspectos_cumplidos': [],
+                'aspectos_incumplidos': [f'Error técnico: {str(e)}'],
+                'recomendaciones': ['Contactar soporte técnico'],
+                'explicacion': f'Error en evaluación: {str(e)}'
+            }
+    
+    def _extraer_cumplimientos(self):
+        """Extrae cumplimientos de los hechos"""
+        cumplimientos = []
         for fact in self.facts.values():
-            if isinstance(fact, ResultadoEvaluacionAmbiental):
-                return {
-                    'cumple_ambiental': fact.get('cumple_ambiental'),
-                    'aspectos_cumplidos': fact.get('aspectos_cumplidos'),
-                    'aspectos_incumplidos': fact.get('aspectos_incumplidos'),
-                    'recomendaciones': fact.get('recomendaciones'),
-                    'explicacion': fact.get('explicacion')
-                }
-        return None
+            if hasattr(fact, 'get') and fact.get('tipo') in ['cumplimiento', 'cumplimiento_adicional']:
+                cumplimientos.append(fact.get('aspecto', 'Aspecto desconocido'))
+        return cumplimientos
+    
+    def _extraer_incumplimientos(self):
+        """Extrae incumplimientos de los hechos"""
+        incumplimientos = []
+        for fact in self.facts.values():
+            if hasattr(fact, 'get') and fact.get('tipo') == 'incumplimiento':
+                incumplimientos.append({
+                    'aspecto': fact.get('aspecto', 'Aspecto desconocido'),
+                    'descripcion': fact.get('descripcion', 'Sin descripción'),
+                    'base_legal': fact.get('base_legal', 'No especificada'),
+                    'severidad': fact.get('severidad', 'media')
+                })
+        return incumplimientos
     
     def obtener_explicacion(self):
         """Retorna la explicación de la decisión tomada"""
