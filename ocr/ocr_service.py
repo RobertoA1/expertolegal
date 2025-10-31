@@ -6,7 +6,6 @@ import os
 import pytesseract
 from PIL import Image
 from pdf2image import convert_from_bytes
-import io
 import streamlit as st
 from typing import Optional, List
 import logging

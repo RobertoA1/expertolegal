@@ -10,22 +10,17 @@ from flow_diagram import mostrar_diagrama_flujo
 from tests_page import pagina_pruebas
 
 try:
-    from ocr.ocr_service import solicitarOCR, validar_configuracion_ocr
+    from ocr.ocr_service import solicitarOCR
 except ImportError:
     st.warning("⚠️ Módulo OCR no disponible")
     solicitarOCR = None
 
 try:
-    from gemini.gemini_service import consultarTipoDocumento, convertirAFormatoExperta
+    from gemini.gemini_service import convertirAFormatoExperta
 except ImportError:
     st.warning("⚠️ Módulo Gemini no disponible") 
     consultarTipoDocumento = None
     convertirAFormatoExperta = None
-
-try:
-    from knowledge import obtner_knowledge_base
-except ImportError:
-    obtner_knowledge_base = None
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)

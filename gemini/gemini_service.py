@@ -8,7 +8,6 @@ import json
 import logging
 from typing import Optional, Dict, Any
 from google import genai
-import os
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
