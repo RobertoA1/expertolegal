@@ -25,6 +25,12 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Compatibilidad Python 3.10+: asegurar collections.Mapping
+import collections
+import collections.abc as _collections_abc
+if not hasattr(collections, 'Mapping'):
+    collections.Mapping = _collections_abc.Mapping
+
 # Configurar OCR si está disponible
 try:
     from ocr.ocr_service import configurar_tesseract
