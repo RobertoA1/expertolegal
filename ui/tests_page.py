@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 import json
 from datetime import datetime
+import re
 
 
 def ejecutar_pytest(test_file: str = None, verbose: bool = True):
@@ -51,6 +52,13 @@ def ejecutar_pytest(test_file: str = None, verbose: bool = True):
         return -1, "", str(e)
 
 
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    return ANSI_RE.sub("", text)
+
+
 def parsear_resultados_pytest(output: str):
     """
     Parsea la salida de pytest para extraer información de tests
@@ -58,7 +66,8 @@ def parsear_resultados_pytest(output: str):
     Returns:
         Dict con información de los tests
     """
-    lineas = output.split('\n')
+    limpio = _strip_ansi(output or "")
+    lineas = limpio.split('\n')
     resultados = {
         'passed': 0,
         'failed': 0,
@@ -67,27 +76,22 @@ def parsear_resultados_pytest(output: str):
         'tests': []
     }
     
+    passed_re = re.compile(r"(\d+)\s+passed", re.IGNORECASE)
+    failed_re = re.compile(r"(\d+)\s+failed", re.IGNORECASE)
+
     for linea in lineas:
-        if 'passed' in linea.lower():
-            # Buscar patrón como "3 passed in 0.50s"
-            partes = linea.split()
-            for i, parte in enumerate(partes):
-                if 'passed' in parte.lower() and i > 0:
-                    try:
-                        resultados['passed'] = int(partes[i-1])
-                    except:
-                        pass
-        
-        if 'failed' in linea.lower():
-            partes = linea.split()
-            for i, parte in enumerate(partes):
-                if 'failed' in parte.lower() and i > 0:
-                    try:
-                        resultados['failed'] = int(partes[i-1])
-                    except:
-                        pass
-        
-        # Detectar tests individuales (líneas que empiezan con "tests/")
+        m = passed_re.search(linea)
+        if m:
+            try:
+                resultados['passed'] = int(m.group(1))
+            except Exception:
+                pass
+        m = failed_re.search(linea)
+        if m:
+            try:
+                resultados['failed'] = int(m.group(1))
+            except Exception:
+                pass
         if linea.strip().startswith('tests/'):
             resultados['tests'].append(linea.strip())
     
@@ -201,13 +205,17 @@ def pagina_pruebas():
     # Selector de test individual si corresponde
     test_seleccionado = None
     if modo_ejecucion == "Test individual":
+        # Descubrir archivos de test disponibles
+        test_dir = Path("tests")
+        if not test_dir.exists():
+            st.warning("⚠️ La carpeta 'tests/' no existe aún.")
+        archivos = sorted([str(p).replace("\\", "/") for p in test_dir.glob("test_*.py")])
+        if not archivos:
+            st.info("No se encontraron archivos de test en 'tests/'.")
         test_seleccionado = st.selectbox(
-            "Seleccione el test a ejecutar:",
-            [
-                "test_inferencia_correcta",
-                "test_caso_borde",
-                "test_explicacion"
-            ]
+            "Seleccione el archivo de test a ejecutar:",
+            options=archivos if archivos else ["tests/test_ambiental.py"],
+            index=0
         )
     
     st.markdown("---")
@@ -236,7 +244,7 @@ def pagina_pruebas():
         # Determinar qué test ejecutar
         test_file = None
         if modo_ejecucion == "Test individual" and test_seleccionado:
-            test_file = f"tests/test_{test_seleccionado}.py"
+            test_file = test_seleccionado
         
         with st.spinner("Ejecutando pytest..."):
             exit_code, stdout, stderr = ejecutar_pytest(test_file, verbose)
@@ -265,47 +273,17 @@ def pagina_pruebas():
             st.success("✅ ¡Todas las pruebas pasaron exitosamente!")
         else:
             st.error("❌ Algunas pruebas fallaron. Revisa los detalles abajo.")
+
+        # Métricas compactas
+        mcol1, mcol2, mcol3 = st.columns(3)
+        with mcol1:
+            st.metric("Passed", st.session_state.get('tests_passed', 0))
+        with mcol2:
+            st.metric("Failed", st.session_state.get('tests_failed', 0))
+        with mcol3:
+            st.metric("Total", st.session_state.get('tests_total', 0))
         
-        # Detalles de tests individuales
-        st.markdown("### 📝 Detalle de Tests")
-        
-        # Estos son placeholders - se actualizarán con resultados reales
-        tests_info = [
-            {
-                'nombre': 'Test de Inferencia Correcta',
-                'descripcion': 'Verifica que las reglas se disparen correctamente',
-                'archivo': 'test_inferencia_correcta.py'
-            },
-            {
-                'nombre': 'Test de Caso Borde',
-                'descripcion': 'Prueba situaciones límite del sistema',
-                'archivo': 'test_caso_borde.py'
-            },
-            {
-                'nombre': 'Test de Explicación',
-                'descripcion': 'Valida que el sistema explique sus decisiones',
-                'archivo': 'test_explicacion.py'
-            }
-        ]
-        
-        for test_info in tests_info:
-            # Determinar estado basado en la salida
-            estado = 'passed' if exit_code == 0 else 'pending'
-            output = st.session_state.get('test_output', '')
-            
-            if test_info['archivo'] in output:
-                if 'PASSED' in output or 'passed' in output:
-                    estado = 'passed'
-                elif 'FAILED' in output or 'failed' in output:
-                    estado = 'failed'
-            
-            mostrar_estado_test(
-                test_info['nombre'],
-                estado,
-                test_info['descripcion']
-            )
-        
-        # Output completo en expander
+        # Output completo en expander (opcional)
         with st.expander("🔍 Ver Output Completo de pytest"):
             st.code(st.session_state.get('test_output', ''), language='bash')
             

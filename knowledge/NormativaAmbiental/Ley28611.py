@@ -46,26 +46,26 @@ class NormativaAmbientalKB(KnowledgeEngine):
     def __init__(self):
         super().__init__()
         self.explicaciones = []
-    
-    @DefFacts()
-    def _inicializar(self):
-        yield ResultadoEvaluacionAmbiental()
 
     # ============= REGLAS DE EVALUACIÓN CORREGIDAS =============
     
     # 1. Estudio de Impacto Ambiental (CRÍTICO)
     @Rule(
         AspectoAmbiental(tiene_estudio_impacto_ambiental=False),
-        AS.resultado << ResultadoEvaluacionAmbiental(cumple_ambiental=True)
+        AS.resultado << ResultadoEvaluacionAmbiental(cumple_ambiental=True),
+        salience=100
     )
     def falta_estudio_impacto(self, resultado):
         """Verifica la existencia del Estudio de Impacto Ambiental"""
+        incumplimiento = {
+            "aspecto": "Estudio de Impacto Ambiental",
+            "descripcion": "El proyecto no cuenta con EIA aprobado por la autoridad competente.",
+            "base_legal": "Art. 28, Ley 28611 / Ley 27446 (SEIA)",
+            "severidad": "crítica",
+        }
         self.declare(Fact(
             tipo="incumplimiento",
-            aspecto="Estudio de Impacto Ambiental",
-            descripcion="El proyecto no cuenta con EIA aprobado por la autoridad competente.",
-            base_legal="Art. 28, Ley 28611 / Ley 27446 (SEIA)",
-            severidad="crítica"
+            **incumplimiento
         ))
         
         self.explicaciones.append(
@@ -74,7 +74,10 @@ class NormativaAmbientalKB(KnowledgeEngine):
             "(Art. 28, Ley 28611)"
         )
         
-        self.modify(resultado, cumple_ambiental=False)
+        # Asegurar que el resultado incluya el incumplimiento crítico de EIA
+        actuales = list(resultado.get('aspectos_incumplidos', []))
+        actuales.append(incumplimiento)
+        self.modify(resultado, cumple_ambiental=False, aspectos_incumplidos=actuales)
 
     @Rule(
         AspectoAmbiental(tiene_estudio_impacto_ambiental=True),
@@ -87,6 +90,27 @@ class NormativaAmbientalKB(KnowledgeEngine):
             descripcion="El proyecto cuenta con EIA aprobado y vigente."
         ))
         self.explicaciones.append("CUMPLE: Se identificó Estudio de Impacto Ambiental.")
+
+    # Sincronizar que el incumplimiento de EIA esté en el resultado
+    @Rule(
+        AS.eia << Fact(tipo="incumplimiento", aspecto="Estudio de Impacto Ambiental"),
+        AS.resultado << ResultadoEvaluacionAmbiental(),
+        NOT(Fact(eia_sincronizado=True)),
+        salience=50
+    )
+    def sync_incumplimiento_eia(self, eia, resultado):
+        actuales = list(resultado.get('aspectos_incumplidos', []))
+        ya_esta = any(isinstance(x, dict) and x.get('aspecto') == 'Estudio de Impacto Ambiental' for x in actuales)
+        if not ya_esta:
+            actuales.append({
+                'aspecto': eia.get('aspecto'),
+                'descripcion': eia.get('descripcion'),
+                'base_legal': eia.get('base_legal'),
+                'severidad': eia.get('severidad') or 'crítica'
+            })
+            self.modify(resultado, aspectos_incumplidos=actuales)
+        # marcar como sincronizado para evitar re-disparo
+        self.declare(Fact(eia_sincronizado=True))
 
     # 2. Monitoreo Ambiental (ALTA)
     @Rule(
