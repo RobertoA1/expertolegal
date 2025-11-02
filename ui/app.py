@@ -8,6 +8,9 @@ import logging
 from typing import Optional
 from flow_diagram import mostrar_diagrama_flujo
 from tests_page import pagina_pruebas
+from engine.selector import select_engines
+from engine.runner import run_engine
+from engine.registry import get_engine_by_id, get_engine_by_name
 
 try:
     from ocr.ocr_service import solicitarOCR
@@ -24,6 +27,12 @@ except ImportError:
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Compatibilidad Python 3.10+: asegurar collections.Mapping
+import collections
+import collections.abc as _collections_abc
+if not hasattr(collections, 'Mapping'):
+    collections.Mapping = _collections_abc.Mapping
 
 # Configurar OCR si está disponible
 try:
@@ -78,12 +87,18 @@ def render_main_page():
     st.title("⚖️ Sistema de Cumplimiento Legal")
     st.markdown("---")
     
-    # 1. Selector de Tipo de Documento
+    # 1. Selector de Tipo de Documento y modo
     st.subheader("1. Seleccione el tipo de documento")
     tipo_documento = st.selectbox(
         "Tipo de Documento:",
         TIPOS_DOCUMENTO,
         index=0
+    )
+    modo_seleccion = st.radio(
+        "Modo de selección del motor:",
+        ["Automático", "Manual"],
+        horizontal=True,
+        help="En modo Manual se usará el tipo de documento elegido. En Automático, el sistema elegirá el motor."
     )
     
     st.markdown("---")
@@ -120,7 +135,7 @@ def render_main_page():
            (opcion_entrada == "Subir documento" and not archivo_input):
             st.error("⚠️ Por favor, ingrese texto o suba un documento antes de consultar.")
         else:
-            consultar_cumplimiento(tipo_documento, texto_input, archivo_input)
+            consultar_cumplimiento(tipo_documento, texto_input, archivo_input, modo_seleccion)
     
     st.markdown("---")
     
@@ -128,7 +143,7 @@ def render_main_page():
     st.info("ℹ️ **Esta herramienta es un asistente. La decisión final debe ser tomada por un humano calificado.**")
 
 
-def consultar_cumplimiento(tipo_documento: str, texto_input: str = None, archivo_input = None) -> dict:
+def consultar_cumplimiento(tipo_documento: str, texto_input: str = None, archivo_input = None, modo_seleccion: str = "Automático") -> dict:
     """
     Consulta el cumplimiento legal usando el motor de reglas Experta
     """
@@ -160,39 +175,38 @@ def consultar_cumplimiento(tipo_documento: str, texto_input: str = None, archivo
         # Paso 2: Evaluar con motor de reglas
         st.markdown("### ⚖️ Paso 2: Evaluando cumplimiento legal...")
         
-        # Mapeo de tipos de documento a sus respectivos motores
-        if tipo_documento == "Protección de Datos Personales":
-            return evaluar_proteccion_datos(hechos_texto)
+        # Modo Manual: usar el tipo seleccionado por el usuario
+        if modo_seleccion == "Manual" and tipo_documento != "Desconozco":
+            entry_manual = get_engine_by_name(tipo_documento)
+            if entry_manual:
+                st.info(f"🧭 Motor seleccionado (Manual): {entry_manual.display_name}")
+                resultados = run_engine(entry_manual.id, hechos_texto)
+                if resultados:
+                    mostrar_resultados_evaluacion(resultados, entry_manual.display_name)
+                    return resultados
+                st.info("🔄 Mostrando evaluación de ejemplo...")
+                mostrar_resultados_ejemplo()
+                return crear_resultado_error("No se obtuvieron resultados del motor (Manual)")
+            else:
+                st.warning("⚠️ Tipo de documento no reconocido. Usando selección automática.")
         
-        elif tipo_documento == "Prevención de Lavado de Activos":
-            return evaluar_lavado_activos(hechos_texto)
-        
-        elif tipo_documento == "Seguridad y Salud en el Trabajo":
-            return evaluar_seguridad_salud(hechos_texto)
-        
-        elif tipo_documento == "Ley de Responsabilidad Administrativa de Personas Jurídicas":
-            return evaluar_responsabilidad_administrativa(hechos_texto)
-        
-        elif tipo_documento == "Protección al Consumidor":
-            return evaluar_proteccion_consumidor(hechos_texto)
-        
-        elif tipo_documento == "Normas Laborales":
-            return evaluar_normas_laborales(hechos_texto)
-        
-        elif tipo_documento == "Normativa Societaria":
-            return evaluar_normativa_societaria(hechos_texto)
-        
-        elif tipo_documento == "Normativa Tributaria":
-            return evaluar_normativa_tributaria(hechos_texto)
-        
-        elif tipo_documento == "Normativa Ambiental":
-            return evaluar_normativa_ambiental(hechos_texto)
-        
-        else:
-            st.warning(f"⚠️ Tipo de documento '{tipo_documento}' no implementado aún")
+        # Selección Automática del motor (fuera de la UI)
+        candidatos = select_engines(hechos_texto, top_k=1)
+        if not candidatos:
             st.info("🔄 Mostrando evaluación de ejemplo...")
             mostrar_resultados_ejemplo()
-            return crear_resultado_error(f"Tipo {tipo_documento} no implementado")
+            return crear_resultado_error("No se pudo seleccionar un motor")
+        engine_id, score = candidatos[0]
+        entry = get_engine_by_id(engine_id)
+        if entry:
+            st.info(f"🧭 Motor seleccionado: {entry.display_name}")
+        resultados = run_engine(engine_id, hechos_texto)
+        if resultados:
+            mostrar_resultados_evaluacion(resultados, entry.display_name if entry else "")
+            return resultados
+        st.info("🔄 Mostrando evaluación de ejemplo...")
+        mostrar_resultados_ejemplo()
+        return crear_resultado_error("No se obtuvieron resultados del motor")
             
     except Exception as e:
         logger.error(f"Error en consultar_cumplimiento: {e}")
@@ -200,402 +214,6 @@ def consultar_cumplimiento(tipo_documento: str, texto_input: str = None, archivo
         st.info("🔄 Mostrando evaluación de ejemplo...")
         mostrar_resultados_ejemplo()
         return crear_resultado_error("Error del sistema")
-
-
-def evaluar_proteccion_datos(hechos_texto: str) -> dict:
-    """Evalúa Ley 29733 - Protección de Datos Personales"""
-    try:
-        from knowledge.ProteccionDatosPersonales.Ley29733 import (
-            ProteccionDatosPersonalesKB, 
-            DocumentoProteccionDatos, 
-            ResultadoEvaluacion
-        )
-        
-        motor = ProteccionDatosPersonalesKB()
-        motor.reset()
-        
-        st.markdown("### 🤖 Paso 3: Analizando contenido con IA...")
-        
-        hechos_estructura = obtener_hechos_gemini(hechos_texto, "Protección de Datos Personales")
-        
-        if not hechos_estructura:
-            hechos_estructura = {
-                "tiene_politica_privacidad": True,
-                "tiene_consentimiento_informado": False,
-                "tiene_registro_banco_datos": True,
-                "especifica_finalidad_datos": False,
-                "menciona_derechos_arco": True,
-                "tiene_medidas_seguridad": False,
-                "menciona_plazo_conservacion": False,
-                "tiene_contrato_encargo": False,
-                "tiene_clausulas_legales": True,
-                "menciona_autoridad_proteccion": True
-            }
-            st.info("🎭 Usando análisis simulado")
-        
-        mostrar_hechos_identificados(hechos_estructura)
-        
-        return ejecutar_motor_reglas(motor, hechos_estructura, DocumentoProteccionDatos, ResultadoEvaluacion)
-        
-    except Exception as e:
-        logger.error(f"Error en evaluar_proteccion_datos: {e}")
-        st.error(f"❌ Error: {str(e)}")
-        mostrar_resultados_ejemplo()
-        return crear_resultado_error("Error en evaluación de Protección de Datos")
-
-
-def evaluar_lavado_activos(hechos_texto: str) -> dict:
-    """Evalúa Ley 27693 - Prevención de Lavado de Activos"""
-    try:
-        from knowledge.PrevencionLavadoActivos.Ley27693 import (
-            PrevencionLavadoActivosKB,
-            DocumentoLavadoActivos,
-            ResultadoEvaluacion
-        )
-        
-        motor = PrevencionLavadoActivosKB()
-        motor.reset()
-        
-        st.markdown("### 🤖 Paso 3: Analizando contenido con IA...")
-        
-        hechos_estructura = obtener_hechos_gemini(hechos_texto, "Prevención de Lavado de Activos")
-        
-        # 🔧 CORREGIR HECHOS SI ES NECESARIO
-        if hechos_estructura:
-            hechos_estructura = corregir_hechos_lavado_activos(hechos_estructura)
-            st.info("🔧 Hechos corregidos para compatibilidad")
-        
-        if not hechos_estructura:
-            hechos_estructura = {
-                "tiene_manual_prevencion": False,
-                "tiene_politicas_prevencion": True,
-                "tiene_identificacion_clientes": False,
-                "tiene_registro_operaciones": True,
-                "tiene_reporte_operaciones_sospechosas": False,
-                "tiene_oficial_cumplimiento": True,
-                "tiene_capacitaciones": False,
-                "tiene_evaluacion_riesgos": False,
-                "tiene_debida_diligencia": True,
-                "menciona_uif_peru": True
-            }
-            st.info("🎭 Usando análisis simulado")
-        
-        mostrar_hechos_identificados(hechos_estructura)
-        
-        return ejecutar_motor_reglas(motor, hechos_estructura, DocumentoLavadoActivos, ResultadoEvaluacion)
-        
-    except Exception as e:
-        logger.error(f"Error en evaluar_lavado_activos: {e}")
-        st.error(f"❌ Error: {str(e)}")
-        mostrar_resultados_ejemplo()
-        return crear_resultado_error("Error en evaluación de Lavado de Activos")
-
-
-def evaluar_seguridad_salud(hechos_texto: str) -> dict:
-    """Evalúa Ley 29783 - Seguridad y Salud en el Trabajo"""
-    try:
-        from knowledge.SeguridadSaludTrabajo.Ley29783 import (
-            SeguridadSaludTrabajoKB,
-            DocumentoSST,
-            ResultadoEvaluacion
-        )
-        
-        motor = SeguridadSaludTrabajoKB()
-        motor.reset()
-        
-        st.markdown("### 🤖 Paso 3: Analizando contenido con IA...")
-        
-        hechos_estructura = obtener_hechos_gemini(hechos_texto, "Seguridad y Salud en el Trabajo")
-        
-        # 🔧 CORREGIR HECHOS SI ES NECESARIO
-        if hechos_estructura:
-            hechos_estructura = corregir_hechos_sst(hechos_estructura)
-            st.info("🔧 Hechos corregidos para compatibilidad")
-        
-        if not hechos_estructura:
-            hechos_estructura = {
-                "tiene_reglamento_interno": True,
-                "tiene_politica_sst": False,
-                "tiene_comite_sst": True,
-                "tiene_supervisor_sst": False,
-                "tiene_matriz_iper": False,
-                "tiene_plan_anual": True,
-                "tiene_registros_obligatorios": False,
-                "tiene_registro_accidentes": True,
-                "tiene_capacitaciones": False,
-                "tiene_examenes_medicos": False,
-                "tiene_epp": True,
-                "tiene_procedimientos_trabajo_seguro": True,
-                "menciona_responsabilidades": True,
-                "numero_trabajadores": 25
-            }
-            st.info("🎭 Usando análisis simulado")
-        
-        mostrar_hechos_identificados(hechos_estructura)
-        
-        return ejecutar_motor_reglas(motor, hechos_estructura, DocumentoSST, ResultadoEvaluacion)
-        
-    except Exception as e:
-        logger.error(f"Error en evaluar_seguridad_salud: {e}")
-        st.error(f"❌ Error: {str(e)}")
-        mostrar_resultados_ejemplo()
-        return crear_resultado_error("Error en evaluación de Seguridad y Salud")
-
-
-def evaluar_responsabilidad_administrativa(hechos_texto: str) -> dict:
-    """Evalúa Ley 30424 - Responsabilidad Administrativa"""
-    try:
-        from knowledge.ResponsabilidadAdministrativa.Ley30424 import (
-            ResponsabilidadAdministrativaKB,
-            DocumentoModeloPrevencion,
-            ResultadoEvaluacion30424
-        )
-        
-        motor = ResponsabilidadAdministrativaKB()
-        motor.reset()
-        
-        st.markdown("### 🤖 Paso 3: Analizando contenido con IA...")
-        
-        hechos_estructura = obtener_hechos_gemini(hechos_texto, "Ley de Responsabilidad Administrativa de Personas Jurídicas")
-        
-        if not hechos_estructura:
-            hechos_estructura = {
-                "compromiso_organo_gobierno": True,
-                "tiene_encargado_prevencion": False,
-                "tiene_mapa_riesgos": True,
-                "tiene_controles_contables_financieros": False,
-                "tiene_canal_denuncia_proteccion": True,
-                "tiene_procedimiento_disciplinario_sancion": False,
-                "tiene_politicas_riesgos_especificos": True
-            }
-            st.info("🎭 Usando análisis simulado")
-        
-        mostrar_hechos_identificados(hechos_estructura)
-        
-        return ejecutar_motor_reglas(motor, hechos_estructura, DocumentoModeloPrevencion, ResultadoEvaluacion30424)
-        
-    except Exception as e:
-        logger.error(f"Error en evaluar_responsabilidad_administrativa: {e}")
-        st.error(f"❌ Error: {str(e)}")
-        mostrar_resultados_ejemplo()
-        return crear_resultado_error("Error en evaluación de Responsabilidad Administrativa")
-
-
-def evaluar_proteccion_consumidor(hechos_texto: str) -> dict:
-    """Evalúa Ley 29571 - Protección al Consumidor - VERSIÓN CORREGIDA"""
-    try:
-        from knowledge.ProteccionConsumidor.Ley29571 import (
-            ProteccionConsumidorKB,
-            DocumentoConsumidor,
-            ResultadoEvaluacion29571
-        )
-        
-        motor = ProteccionConsumidorKB()
-        motor.reset()
-        
-        st.markdown("### 🤖 Paso 3: Analizando contenido con IA...")
-        
-        hechos_estructura = obtener_hechos_gemini(hechos_texto, "Protección al Consumidor")
-        
-        # 🔧 CORREGIR HECHOS SI ES NECESARIO
-        if hechos_estructura:
-            hechos_estructura = corregir_hechos_consumidor(hechos_estructura)
-            st.info("🔧 Hechos corregidos para compatibilidad")
-        
-        if not hechos_estructura:
-            hechos_estructura = {
-                "garantiza_idoneidad": True,
-                "menciona_riesgos_seguridad": False,
-                "es_publicidad_clara_veraz": True,
-                "tiene_clausulas_transparentes": False,
-                "tiene_libro_reclamaciones_fisico_virtual": True,
-                "cumple_plazo_respuesta_reclamos": False,
-                "ofrece_posibilidad_pago_anticipado": True
-            }
-            st.info("🎭 Usando análisis simulado")
-        
-        mostrar_hechos_identificados(hechos_estructura)
-        
-        return ejecutar_motor_reglas(motor, hechos_estructura, DocumentoConsumidor, ResultadoEvaluacion29571)
-        
-    except Exception as e:
-        logger.error(f"Error en evaluar_proteccion_consumidor: {e}")
-        st.error(f"❌ Error: {str(e)}")
-        mostrar_resultados_ejemplo()
-        return crear_resultado_error("Error en evaluación de Protección al Consumidor")
-
-
-def evaluar_normas_laborales(hechos_texto: str) -> dict:
-    """Evalúa D.S. 003-97-TR - Normas Laborales"""
-    try:
-        from knowledge.NormasLaborales.DS003_97_TR import (
-            NormasLaboralesKB,
-            DocumentoNormaLaboral,
-            ResultadoEvaluacionLaboral
-        )
-        
-        motor = NormasLaboralesKB()
-        motor.reset()
-        
-        st.markdown("### 🤖 Paso 3: Analizando contenido con IA...")
-        
-        hechos_estructura = obtener_hechos_gemini(hechos_texto, "Normas Laborales")
-        
-        if not hechos_estructura:
-            hechos_estructura = {
-                "tiene_contratos_escritos_vigentes": True,
-                "tiene_periodo_prueba_informado": False,
-                "tiene_registro_planilla_electronica": True,
-                "entrega_boletas_pago_oportunas": False,
-                "tiene_reglamento_interno_trabajo": False,
-                "registra_control_asistencia": True
-            }
-            st.info("🎭 Usando análisis simulado")
-        
-        mostrar_hechos_identificados(hechos_estructura)
-        
-        return ejecutar_motor_reglas(motor, hechos_estructura, DocumentoNormaLaboral, ResultadoEvaluacionLaboral)
-        
-    except Exception as e:
-        logger.error(f"Error en evaluar_normas_laborales: {e}")
-        st.error(f"❌ Error: {str(e)}")
-        mostrar_resultados_ejemplo()
-        return crear_resultado_error("Error en evaluación de Normas Laborales")
-
-
-def evaluar_normativa_societaria(hechos_texto: str) -> dict:
-    """Evalúa Ley 26887 - Normativa Societaria"""
-    try:
-        from knowledge.NormativaSocietaria.Ley26887 import (
-            NormativaSocietariaKB,
-            DocumentoSocietario,
-            ResultadoEvaluacionSocietaria
-        )
-        
-        motor = NormativaSocietariaKB()
-        motor.reset()
-        
-        st.markdown("### 🤖 Paso 3: Analizando contenido con IA...")
-        
-        hechos_estructura = obtener_hechos_gemini(hechos_texto, "Normativa Societaria")
-        
-        # 🔧 CORREGIR HECHOS SI ES NECESARIO
-        if hechos_estructura:
-            hechos_estructura = corregir_hechos_societarios(hechos_estructura)
-            st.info("🔧 Hechos corregidos para compatibilidad")
-        
-        if not hechos_estructura:
-            hechos_estructura = {
-                "esta_constituida_escritura_publica": True,
-                "esta_inscrita_registros_publicos": True,
-                "tiene_estatuto_actualizado": False,
-                "capital_suscrito_totalmente": True,
-                "capital_pagado_minimo": False,
-                "mantiene_pluralidad_socios": True,
-                "tiene_libro_actas_junta_general": True,
-                "tiene_libro_matricula_acciones": False,
-                "tiene_libro_actas_directorio": True
-            }
-            st.info("🎭 Usando análisis simulado")
-        
-        mostrar_hechos_identificados(hechos_estructura)
-        
-        return ejecutar_motor_reglas(motor, hechos_estructura, DocumentoSocietario, ResultadoEvaluacionSocietaria)
-        
-    except Exception as e:
-        logger.error(f"Error en evaluar_normativa_societaria: {e}")
-        st.error(f"❌ Error: {str(e)}")
-        mostrar_resultados_ejemplo()
-        return crear_resultado_error("Error en evaluación de Normativa Societaria")
-
-
-def evaluar_normativa_tributaria(hechos_texto: str) -> dict:
-    """Evalúa D.S. 133-2013-EF - Normativa Tributaria"""
-    try:
-        from knowledge.NormativaTributaria.DS133_2013_EF import (
-            NormativaTributariaKB,
-            DocumentoTributario,
-            ResultadoEvaluacionTributaria
-        )
-        
-        motor = NormativaTributariaKB()
-        motor.reset()
-        
-        st.markdown("### 🤖 Paso 3: Analizando contenido con IA...")
-        
-        hechos_estructura = obtener_hechos_gemini(hechos_texto, "Normativa Tributaria")
-        
-        # 🔧 CORREGIR HECHOS SI ES NECESARIO
-        if hechos_estructura:
-            hechos_estructura = corregir_hechos_tributarios(hechos_estructura)
-            st.info("🔧 Hechos corregidos para compatibilidad")
-        
-        if not hechos_estructura:
-            hechos_estructura = {
-                "tiene_libros_obligatorios_vigentes": True,
-                "libros_cumplen_plazo_maximo_atraso": False,
-                "emite_comprobantes_pago_por_ventas": True,
-                "comprobantes_sustentan_costo_gasto": False,
-                "presenta_declaracion_jurada_mensual": True,
-                "presenta_declaracion_jurada_anual": True,
-                "domicilio_fiscal_comunicado_sunat": False
-            }
-            st.info("🎭 Usando análisis simulado")
-        
-        mostrar_hechos_identificados(hechos_estructura)
-        
-        return ejecutar_motor_reglas(motor, hechos_estructura, DocumentoTributario, ResultadoEvaluacionTributaria)
-        
-    except Exception as e:
-        logger.error(f"Error en evaluar_normativa_tributaria: {e}")
-        st.error(f"❌ Error: {str(e)}")
-        mostrar_resultados_ejemplo()
-        return crear_resultado_error("Error en evaluación de Normativa Tributaria")
-
-
-def evaluar_normativa_ambiental(hechos_texto: str) -> dict:
-    """Evalúa Ley 28611 - Normativa Ambiental"""
-    try:
-        from knowledge.NormativaAmbiental.Ley28611 import (
-            NormativaAmbientalKB,
-            AspectoAmbiental,
-            ResultadoEvaluacionAmbiental
-        )
-        
-        motor = NormativaAmbientalKB()
-        motor.reset()
-        
-        st.markdown("### 🤖 Paso 3: Analizando contenido con IA...")
-        
-        hechos_estructura = obtener_hechos_gemini(hechos_texto, "Normativa Ambiental")
-        
-        # 🔧 CORREGIR HECHOS SI ES NECESARIO
-        if hechos_estructura:
-            hechos_estructura = corregir_hechos_ambientales(hechos_estructura)
-            st.info("🔧 Hechos corregidos para compatibilidad")
-        
-        if not hechos_estructura:
-            hechos_estructura = {
-                "tiene_estudio_impacto_ambiental": False,
-                "tiene_monitoreo_ambiental": True,
-                "cumple_LMP_ECA": False,
-                "tiene_registro_residuos_solidos": True,
-                "tiene_autorizacion_vertimientos": False,
-                "tiene_plan_manejo_ambiental": True,
-                "tiene_sistema_gestion_ambiental": False,
-                "tiene_plan_contigencia": True
-            }
-            st.info("🎭 Usando análisis simulado")
-        
-        mostrar_hechos_identificados(hechos_estructura)
-        
-        return ejecutar_motor_reglas(motor, hechos_estructura, AspectoAmbiental, ResultadoEvaluacionAmbiental)
-        
-    except Exception as e:
-        logger.error(f"Error en evaluar_normativa_ambiental: {e}")
-        st.error(f"❌ Error: {str(e)}")
-        mostrar_resultados_ejemplo()
-        return crear_resultado_error("Error en evaluación de Normativa Ambiental")
 
 
 def obtener_hechos_gemini(texto: str, tipo_documento: str):

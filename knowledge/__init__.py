@@ -11,7 +11,7 @@ from .ProteccionConsumidor.Ley29571 import ProteccionConsumidorKB
 from .NormasLaborales.DS003_97_TR import NormasLaboralesKB
 from .NormativaSocietaria.Ley26887 import NormativaSocietariaKB
 from .NormativaTributaria.DS133_2013_EF import NormativaTributariaKB
-from .NormativaAmbiental import NormativaAmbientalKB
+from .NormativaAmbiental.Ley28611 import NormativaAmbientalKB
 
 # Mapeo de tipos de documento a su base de conocimiento
 
@@ -27,7 +27,7 @@ KNOWLEDGE_BASES = {
     "Normativa Ambiental": NormativaAmbientalKB
 }
 
-def obtner_knowledge_base(tipo_documento):
+def obtener_knowledge_base(tipo_documento):
     """
     Obtiene la base de conocimiento segun el tipo de documento.
 
