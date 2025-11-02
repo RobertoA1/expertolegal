@@ -6,8 +6,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import streamlit as st
 import logging
 from typing import Optional
-from flow_diagram import mostrar_diagrama_flujo
-from tests_page import pagina_pruebas
+from ui.flow_diagram import mostrar_diagrama_flujo
+from ui.tests_page import pagina_pruebas
 from engine.selector import select_engines
 from engine.runner import run_engine
 from engine.registry import get_engine_by_id, get_engine_by_name
